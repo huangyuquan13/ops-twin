@@ -7,6 +7,10 @@ ops-twin-web/.vite/
 ops-twin-server/target/
 ops-twin-server/*.class
 
+# === Sensitive files (use .example as template) ===
+ops-twin-server/src/main/resources/application.yml
+ops-twin-server/ops_twin_db.sql
+
 # === Uploads (runtime user files) ===
 ops-twin-server/uploads/
 
