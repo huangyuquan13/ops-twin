@@ -2,14 +2,26 @@
 ops-twin-web/node_modules/
 ops-twin-web/dist/
 ops-twin-web/.vite/
+ops-twin-web/.env
+ops-twin-web/.env.local
+ops-twin-web/.env.production
+ops-twin-web/*.local
 
 # === Backend ===
 ops-twin-server/target/
 ops-twin-server/*.class
+ops-twin-server/.env
+ops-twin-server/.env.local
 
 # === Sensitive files (use .example as template) ===
 ops-twin-server/src/main/resources/application.yml
+ops-twin-server/src/main/resources/application-*.yml
 ops-twin-server/ops_twin_db.sql
+**/secrets/
+**/credentials/
+**/*password*
+**/*secret*
+**/*token*
 
 # === Uploads (runtime user files) ===
 ops-twin-server/uploads/
@@ -18,11 +30,26 @@ ops-twin-server/uploads/
 .idea/
 *.iml
 .vscode/settings.json
+*.swp
+*.swo
+*~
 
 # === OS ===
 Thumbs.db
 Desktop.ini
 .DS_Store
+._*
 
 # === Logs ===
 *.log
+logs/
+
+# === Cache ===
+.cache/
+*.cache
+.mvn/wrapper/maven-wrapper.jar
+
+# === Build artifacts ===
+*.jar
+*.war
+*.ear
