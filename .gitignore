@@ -1,0 +1,24 @@
+# === Frontend ===
+ops-twin-web/node_modules/
+ops-twin-web/dist/
+ops-twin-web/.vite/
+
+# === Backend ===
+ops-twin-server/target/
+ops-twin-server/*.class
+
+# === Uploads (runtime user files) ===
+ops-twin-server/uploads/
+
+# === IDE ===
+.idea/
+*.iml
+.vscode/settings.json
+
+# === OS ===
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# === Logs ===
+*.log

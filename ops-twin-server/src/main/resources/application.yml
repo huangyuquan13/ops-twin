@@ -1,0 +1,16 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ops-twin-server
+  datasource:
+    url: jdbc:mysql://localhost:3306/ops_twin_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=GMT%2B8&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456 # 请修改为你的 Navicat 数据库密码
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl # 开启控制台 SQL 日志
+    map-underscore-to-camel-case: true # 开启下划线转驼峰
