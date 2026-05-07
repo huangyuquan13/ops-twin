@@ -24,6 +24,11 @@ const routes: Array<RouteRecordRaw> = [
             },
             // 资产中心
             {
+                path: 'assets/cabinet',
+                component: () => import('@/views/assets/cabinet.vue'),
+                meta: { title: '物理机柜' }
+            },
+            {
                 path: 'assets/host',
                 component: () => import('@/views/assets/host.vue'),
                 meta: { title: '物理资产' }

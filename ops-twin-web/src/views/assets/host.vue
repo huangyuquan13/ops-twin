@@ -68,13 +68,7 @@
             >
           </template>
         </el-table-column>
-        <el-table-column label="3D坐标 (X,Y,Z)" width="180">
-          <template #default="scope">
-            <el-tag effect="plain" size="small" class="coord-tag">
-              {{ scope.row.posX }}, {{ scope.row.posY }}, {{ scope.row.posZ }}
-            </el-tag>
-          </template>
-        </el-table-column>
+
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="scope">
             <el-button link type="primary" @click="handleEdit(scope.row)"
@@ -105,14 +99,14 @@
     <el-dialog
       :title="dialogTitle"
       v-model="dialogVisible"
-      width="550px"
+      width="650px"
       destroy-on-close
     >
       <el-form
         :model="form"
         :rules="rules"
         ref="formRef"
-        label-width="100px"
+        label-width="120px"
         class="custom-form"
       >
         <el-row :gutter="20">
@@ -148,52 +142,23 @@
         </el-row>
         
         <!-- 新增：3D 孪生拓扑绑定 -->
-        <el-divider content-position="left">机架插槽拓扑 (可视化关键)</el-divider>
+        <el-divider content-position="left">机架插槽拓扑</el-divider>
         <el-row :gutter="20">
           <el-col :span="12">
             <el-form-item label="归属机柜编号" prop="cabinetId">
-              <el-input v-model="form.cabinetId" placeholder="例如: CAB-01" />
+              <el-select v-model="form.cabinetId" placeholder="请选择机柜" style="width: 100%">
+                <el-option
+                  v-for="item in cabinetOptions"
+                  :key="item.cabinetId"
+                  :label="`${item.cabinetId} (${item.cabinetName})`"
+                  :value="item.cabinetId"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="插槽位置(U位)" prop="rackPos">
-              <el-input-number v-model="form.rackPos" :min="1" :max="42" controls-position="right" style="width: 100%" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-
-        <el-row :gutter="20">
-          <el-divider content-position="left"
-            >机柜 3D 空间定位 (仅首次创建机柜时生效)</el-divider
-          >
-          <el-col :span="8">
-            <el-form-item label="X轴位置" class="coord-item">
-              <el-input-number
-                v-model="form.posX"
-                :precision="2"
-                :step="0.1"
-                controls-position="right"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="Y轴位置" class="coord-item">
-              <el-input-number
-                v-model="form.posY"
-                :precision="2"
-                :step="0.1"
-                controls-position="right"
-              />
-            </el-form-item>
-          </el-col>
-          <el-col :span="8">
-            <el-form-item label="Z轴位置" class="coord-item">
-              <el-input-number
-                v-model="form.posZ"
-                :precision="2"
-                :step="0.1"
-                controls-position="right"
-              />
+              <el-input-number v-model="form.rackPos" :min="1" :max="form.cabinetId ? (cabinetOptions.find(c => c.cabinetId === form.cabinetId)?.maxU || 42) : 42" controls-position="right" style="width: 100%" />
             </el-form-item>
           </el-col>
         </el-row>
@@ -218,6 +183,7 @@ import request from "@/api/request"; // 引入您的拦截器实例
 const loading = ref(false);
 const hostList = ref([]);
 const total = ref(0);
+const cabinetOptions = ref<any[]>([]);
 //响应式状态管理 统一的状态源
 const queryParams = reactive({
   current: 1,
@@ -241,9 +207,6 @@ const form = ref({
   memoryGb: 16,
   cabinetId: "",
   rackPos: 1,
-  posX: 0,
-  posY: 0,
-  posZ: 0,
 });
 
 const rules = {
@@ -266,6 +229,18 @@ const fetchList = async () => {
     console.error("获取资产列表失败:", error);
   } finally {
     loading.value = false;
+  }
+};
+
+// 获取所有机柜列表供下拉选择
+const fetchCabinetList = async () => {
+  try {
+    const res: any = await request.get("/api/asset/cabinet/list/all");
+    if (res.code === 200) {
+      cabinetOptions.value = res.data;
+    }
+  } catch (error) {
+    console.error("获取机柜列表失败:", error);
   }
 };
 
@@ -305,9 +280,8 @@ const handleAdd = () => {
     status: 1,
     cpuCores: 8,
     memoryGb: 16,
-    posX: 0,
-    posY: 0,
-    posZ: 0,
+    cabinetId: "",
+    rackPos: 1,
   };
   dialogVisible.value = true;
 };
@@ -374,6 +348,7 @@ const getStatusLabel = (status: number) => {
 // 页面挂载时立即获取数据
 onMounted(() => {
   fetchList();
+  fetchCabinetList(); // 加载机柜下拉框
 });
 </script>
 

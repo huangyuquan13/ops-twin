@@ -23,14 +23,19 @@
 - 说明：专门给 Three.js 用的轻量化同步接口。
 
 ## 2. 资产中心 (Asset Center)
+
+### 2.0 机柜台账管理 (新增)
+**接口路径**: `GET /api/asset/cabinet/list` , `POST /api/asset/cabinet/save` , `DELETE /api/asset/cabinet/delete/{id}`
+- 说明：用于维护机房内的物理机柜及真实的 X、Z 空间坐标。
+
 ### 2.1 物理主机列表查询 (分页)
-**接口路径**: `GET /api/asset/nodes/list`
-- 说明：用于资产管理表格展示。
-- Params: `page, size, hostname`
+**接口路径**: `GET /api/asset/host/list`
+- 说明：用于资产管理表格展示。支持按 cabinetId 搜索。
+- Params: `current, size, hostname, ipAddr, cabinetId`
 
 ### 2.2 物理主机增删改
 **接口路径**: `POST /api/asset/host/save` , `DELETE /api/asset/host/delete/{id}`
-- 说明：支持绑定 cabinet_id 和 rack_pos。
+- 说明：支持绑定 cabinet_id 和 rack_pos。保存时不再接收坐标字段，彻底解耦物理坐标。
 
 ## 3. 任务中心 (Task Center)
 ### 3.1 任务列表查询

@@ -20,7 +20,8 @@
         <!-- 资产中心 -->
         <el-sub-menu index="2">
           <template #title><span>资产中心</span></template>
-          <el-menu-item index="/assets/host">物理资产台账</el-menu-item>
+          <el-menu-item index="/assets/cabinet">物理机柜台账</el-menu-item>
+          <el-menu-item index="/assets/host">物理服务器台账</el-menu-item>
           <el-menu-item index="/assets/service">逻辑服务映射</el-menu-item>
         </el-sub-menu>
 

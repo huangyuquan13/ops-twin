@@ -7,17 +7,15 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("asset_host")
-public class AssetHost {
+@TableName("asset_cabinet")
+public class AssetCabinet {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private String hostname;
-    private String ipAddr;
-    private Integer status; // 1健康/2报警/3宕机
-    private Integer cpuCores;
-    private Integer memoryGb;
-    private String cabinetId;
-    private Integer rackPos;
+    private String cabinetId; // 机柜编号
+    private String cabinetName; // 机柜名称
+    private Float posX;
+    private Float posZ;
+    private Integer maxU;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
 }

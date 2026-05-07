@@ -3,14 +3,21 @@
 **日期**: 2026-05-07
 **战略目标**: 从“纯展示”跨越到“管理即配置”。彻底打通物理资产与逻辑业务的界限，为后续的自动化演练提供数据基石。
 
-## 核心任务一：物理资产台账 (Physical Asset Ledger)
+## 核心任务零：CMDB 架构升维 (Database Normalization)
+**目标**: 修复物理资产与逻辑机柜的数据耦合漏洞，实现大厂级 CMDB 范式。
+**具体工作**:
+1. **数据库重构**: 创建 `asset_cabinet` 表存储真实的 3D 坐标，并从 `asset_host` 表中移除 `pos_x`, `pos_z`。
+2. **后端升级**: 新增 `CabinetController` 接口。
+3. **机柜台账开发**: 新增一个独立的前端页面管理机柜，并修改现有的 3D 大屏加载逻辑，使其优先读取真实机柜数据。
+
+## 核心任务一：物理资产台账升级 (Physical Asset Ledger)
 **目标**: 建立 3D 大屏与后端数据的 CRUD 枢纽。
 **具体工作**:
 1. **后端 API**: 完善 `AssetController` 中对 `asset_host` 的增删改查分页接口。
-2. **前端页面**: 开发 `src/views/asset/PhysicalHost.vue`。
+2. **前端页面**: 重构 `src/views/assets/host.vue`。
 3. **亮点功能**: 
    - 带有复杂筛选器的高级表格。
-   - 在新增/编辑主机时，能够直接配置 `cabinet_id` (归属机柜) 和 `rack_pos` (U位插槽)。
+   - 在新增/编辑主机时，`cabinet_id` 变为下拉框（从机柜表读取），隐藏坐标配置，仅保留 `rack_pos` (U位插槽)。
    - **闭环验证**: 在这里修改主机的机柜归属或插槽位置后，切回 3D 大屏，对应的发光刀片应该立刻改变位置。
 
 ## 核心任务二：逻辑服务映射 (Logical Service Mapping)
