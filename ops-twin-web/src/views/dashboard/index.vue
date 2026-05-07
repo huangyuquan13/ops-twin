@@ -49,17 +49,12 @@
       </div>
     </Transition>
 
-    <!-- L3 视图: 专属全息数字标牌 (真 3D 空间跟随挂载) -->
-    <div 
-      ref="hologramCardRef" 
-      class="hologram-card" 
-      :style="{ 
-        opacity: currentView === 'L3' ? 1 : 0, 
-        pointerEvents: currentView === 'L3' ? 'auto' : 'none',
-        transition: 'opacity 0.3s ease-in-out'
-      }"
-    >
-      <div v-if="activeBladeData">
+    <!-- L3 视图: 专属全息数字标牌 (固定看板版，解决显示不全问题) -->
+    <Transition name="fade">
+      <div 
+        v-if="currentView === 'L3' && activeBladeData"
+        class="hologram-card" 
+      >
         <div class="holo-header">
           <i class="el-icon-cpu"></i> 硬件数字标牌 (L3)
         </div>
@@ -94,7 +89,7 @@
           <div class="fan-blade" style="transform: rotate(240deg)"></div>
         </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -126,7 +121,7 @@ let labelRenderer: CSS2DRenderer;
 let controls: OrbitControls;
 let frameId: number;
 let activeCabinet: THREE.Group | null = null; 
-let hologramObject: CSS2DObject; // 真正的 3D 全息标牌对象
+let activeBladeObject: THREE.Object3D | null = null; // 当前选中的 3D 刀片对象
 
 // 视角记忆：记录用户从 L1 飞往 L2 之前，停留在 L1 的相机位置和焦点
 const l1CameraState = { position: new THREE.Vector3(), target: new THREE.Vector3() };
@@ -156,12 +151,6 @@ const initThree = () => {
   labelRenderer.domElement.style.pointerEvents = 'none'; 
   threeContainer.value.appendChild(labelRenderer.domElement);
 
-  // 初始化 L3 真 3D 标牌
-  if (hologramCardRef.value) {
-    hologramObject = new CSS2DObject(hologramCardRef.value);
-    scene.add(hologramObject);
-  }
-
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true; //随时更新控制器状态
 
@@ -179,10 +168,11 @@ const initThree = () => {
 };
 
 const animate = () => {
-  frameId = requestAnimationFrame(animate); //递归调用 死循环
+  frameId = requestAnimationFrame(animate); 
   controls.update(); 
   TWEEN.update(); 
-  renderer.render(scene, camera); //每一帧渲染一次场景和相机
+
+  renderer.render(scene, camera); 
   labelRenderer.render(scene, camera); 
 };
 
@@ -205,8 +195,14 @@ const fetchAndRenderAssets = async () => {
 const createCabinetModel = (cabinetId: string, posX: number, posZ: number, hosts: any[]) => {
   const group = new THREE.Group();
 
-  // 1. 全息科技线框外壳
-  const bodyGeom = new THREE.BoxGeometry(1.2, 2.4, 1.2);
+  // 【参数化建模】根据该机柜内主机的最高 U 位，动态计算机柜高度
+  // 基础高度设为 8U，如果机器超过 8U，则按需增长
+  const maxU = Math.max(8, ...hosts.map(h => h.rackPos || h.rack_pos || 0));
+  const slotHeight = 0.26; // 每个 U 位的高度间隔
+  const cabinetHeight = maxU * slotHeight + 0.4; // 总高度
+
+  // 1. 全息科技线框外壳 (高度动态化)
+  const bodyGeom = new THREE.BoxGeometry(1.2, cabinetHeight, 1.2);
   const glassMat = new THREE.MeshBasicMaterial({ 
     color: "#00e5ff", transparent: true, opacity: 0.03, depthWrite: false 
   });
@@ -218,28 +214,24 @@ const createCabinetModel = (cabinetId: string, posX: number, posZ: number, hosts
   const line = new THREE.LineSegments(edges, lineMat);
   group.add(line);
 
-  // 2. 内部刀片服务器 (按 U 位插槽排列，共 8 U)
+  // 2. 内部刀片服务器 (循环上限动态化)
   const servers = new THREE.Group();
-  for(let i=0; i<8; i++) { 
-    // 根据 rack_pos 寻找该插槽有没有被使用的服务器（rack_pos 从 1 开始）
+  const startY = -(cabinetHeight / 2) + 0.3; // 从底部向上排列的起始点
+
+  for(let i=0; i<maxU; i++) { 
     const host = hosts.find(h => h.rackPos === i + 1 || h.rack_pos === i + 1);
     
     if (host) {
-      // 这是一个真实存在的物理资产主机
       const serverGeom = new THREE.BoxGeometry(1.0, 0.15, 1.0); 
-      // 优先展示真实的 CPU 核数换算负载，没有的话用 ID 随机算
       const usage = host.cpuCores ? (host.cpuCores * 13) % 100 : ((host.id || 1) * (i+1) * 7) % 100; 
       
-      let baseColor = "#52c41a"; // 默认健康 (1)
-      if (host.status === 2) {
-        baseColor = "#faad14"; // 报警 (2)
-      } else if (host.status === 0 || host.status === 3) {
-        baseColor = "#ff4d4f"; // 宕机 (0 或 3)
-      }
+      let baseColor = "#52c41a"; 
+      if (host.status === 2) baseColor = "#faad14"; 
+      else if (host.status === 0 || host.status === 3) baseColor = "#ff4d4f"; 
+
       const serverMat = new THREE.MeshPhongMaterial({ color: "#1e293b" }); 
-      
       const server = new THREE.Mesh(serverGeom, serverMat);
-      server.position.set(0, -0.9 + i * 0.26, 0); 
+      server.position.set(0, startY + i * slotHeight, 0); 
       
       const ledGeom = new THREE.BoxGeometry(0.1, 0.02, 0.01);
       const ledMat = new THREE.MeshBasicMaterial({ color: baseColor });
@@ -251,28 +243,27 @@ const createCabinetModel = (cabinetId: string, posX: number, posZ: number, hosts
       server.userData = { usage, ledMat, baseColor, slotIndex: i, parentHost: host }; 
       servers.add(server);
     } else {
-      // 空插槽，渲染暗色盲板
       const emptyGeom = new THREE.BoxGeometry(1.0, 0.15, 1.0);
       const emptyMat = new THREE.MeshPhongMaterial({ color: "#0a1118", transparent: true, opacity: 0.5 }); 
       const emptySlot = new THREE.Mesh(emptyGeom, emptyMat);
-      emptySlot.position.set(0, -0.9 + i * 0.26, 0); 
+      emptySlot.position.set(0, startY + i * slotHeight, 0); 
       servers.add(emptySlot);
     }
   }
   group.add(servers);
 
-  // CSS2D 标签 (机柜层)
+  // CSS2D 标签 (位置也随高度动态调整)
   const labelDiv = document.createElement('div');
   labelDiv.className = 'host-label';
   labelDiv.textContent = cabinetId;
   const label = new CSS2DObject(labelDiv);
-  label.position.set(0, 1.5, 0);
+  label.position.set(0, cabinetHeight / 2 + 0.3, 0);
   group.add(label);
 
   group.name = "hostModel"; 
   group.userData = { cabinetId, hostCount: hosts.length, posX, posZ, servers, glassBody, line }; 
-  // 机柜中心 Y 值固定为 1.2
-  group.position.set(posX, 1.2, posZ);
+  // 机柜底座贴地，中心点 Y 值为高度的一半
+  group.position.set(posX, cabinetHeight / 2, posZ);
 
   return group;
 };
@@ -350,12 +341,7 @@ const onCanvasClick = (event: MouseEvent) => {
       if (current) {
         currentView.value = 'L3';
         activeBladeData.value = current.userData;
-
-        // 【高级感拉满】：将 HTML 面板真正挂载到 3D 空间的刀片旁边！
-        current.updateMatrixWorld(true);
-        const bladeWorldPos = new THREE.Vector3().setFromMatrixPosition(current.matrixWorld);
-        // 设置在服务器右上方悬浮
-        hologramObject.position.set(bladeWorldPos.x + 1.2, bladeWorldPos.y + 0.3, bladeWorldPos.z);
+        activeBladeObject = current; // 记录 3D 对象引用用于坐标投影同步
         
         return; 
       }
@@ -408,6 +394,7 @@ const goBack = () => {
     // 从 L3 退回到 L2
     currentView.value = 'L2';
     activeBladeData.value = null;
+    activeBladeObject = null;
     return;
   }
 
@@ -528,11 +515,11 @@ onUnmounted(() => {
 
 /* ======== L3 全息数字标牌样式 ======== */
 .hologram-card {
-  width: 400px; background: radial-gradient(circle, rgba(0, 229, 255, 0.1) 0%, rgba(5, 12, 20, 0.95) 70%);
-  border: 1px solid rgba(0, 229, 255, 0.5); border-radius: 8px; padding: 30px;
-  color: #fff; z-index: 200; box-shadow: 0 0 50px rgba(0, 229, 255, 0.3);
+  position: absolute; top: 100px; right: 20px; width: 340px;
+  background: rgba(5, 12, 20, 0.95);
+  border: 1px solid #00e5ff; border-radius: 2px; padding: 24px;
+  color: #fff; z-index: 100; box-shadow: 0 0 40px rgba(0, 229, 255, 0.2);
   backdrop-filter: blur(10px);
-  pointer-events: auto; /* 允许在 3D 场景中可点击 */
 }
 .holo-header { font-size: 24px; font-weight: bold; color: #00e5ff; border-bottom: 1px solid rgba(0, 229, 255, 0.3); padding-bottom: 15px; margin-bottom: 20px; text-align: center; letter-spacing: 2px; }
 .data-row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 16px; font-family: "JetBrains Mono"; }

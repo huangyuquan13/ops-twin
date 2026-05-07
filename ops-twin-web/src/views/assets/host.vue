@@ -24,11 +24,10 @@
           />
         </el-form-item>
         <el-form-item label="IP地址">
-          <el-input
-            v-model.trim="queryParams.ipAddr"
-            placeholder="请输入IP"
-            clearable
-          />
+          <el-input v-model.trim="queryParams.ipAddr" placeholder="请输入IP" clearable @keyup.enter="handleSearch" />
+        </el-form-item>
+        <el-form-item label="归属机柜">
+          <el-input v-model.trim="queryParams.cabinetId" placeholder="请输入机柜编号" clearable @keyup.enter="handleSearch" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleSearch">搜索</el-button>
@@ -56,7 +55,13 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="硬件配置" min-width="180">
+        <el-table-column prop="cabinetId" label="归属机柜" width="120" />
+        <el-table-column label="机柜插槽 (U位)" width="130">
+          <template #default="scope">
+            <span class="val-blue">{{ scope.row.rackPos ? scope.row.rackPos + 'U' : '未上架' }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="硬件配置" min-width="150">
           <template #default="scope">
             <span class="config-text"
               >{{ scope.row.cpuCores }}核 / {{ scope.row.memoryGb }}GB</span
@@ -140,8 +145,26 @@
               <el-input-number v-model="form.memoryGb" :min="1" />
             </el-form-item>
           </el-col>
+        </el-row>
+        
+        <!-- 新增：3D 孪生拓扑绑定 -->
+        <el-divider content-position="left">机架插槽拓扑 (可视化关键)</el-divider>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="归属机柜编号" prop="cabinetId">
+              <el-input v-model="form.cabinetId" placeholder="例如: CAB-01" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="插槽位置(U位)" prop="rackPos">
+              <el-input-number v-model="form.rackPos" :min="1" :max="42" controls-position="right" style="width: 100%" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+
+        <el-row :gutter="20">
           <el-divider content-position="left"
-            >3D 空间定位 (可视化关键)</el-divider
+            >机柜 3D 空间定位 (仅首次创建机柜时生效)</el-divider
           >
           <el-col :span="8">
             <el-form-item label="X轴位置" class="coord-item">
@@ -201,6 +224,7 @@ const queryParams = reactive({
   size: 10,
   hostname: "",
   ipAddr: "",
+  cabinetId: "",
 });
 
 // 表单与对话框状态
@@ -215,6 +239,8 @@ const form = ref({
   status: 1,
   cpuCores: 8,
   memoryGb: 16,
+  cabinetId: "",
+  rackPos: 1,
   posX: 0,
   posY: 0,
   posZ: 0,
@@ -264,6 +290,7 @@ const handleSearch = () => {
 const handleReset = () => {
   queryParams.hostname = "";
   queryParams.ipAddr = "";
+  queryParams.cabinetId = "";
   queryParams.current = 1;
   fetchList();
 };

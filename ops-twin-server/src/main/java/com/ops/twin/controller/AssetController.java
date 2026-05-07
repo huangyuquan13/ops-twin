@@ -21,7 +21,7 @@ public class AssetController {
     public Result<com.baomidou.mybatisplus.core.metadata.IPage<AssetHost>> list(
             @RequestParam(defaultValue = "1") Integer current,
             @RequestParam(defaultValue = "10") Integer size,
-            String hostname, String ipAddr) {
+            String hostname, String ipAddr, String cabinetId) {
         
         com.baomidou.mybatisplus.extension.plugins.pagination.Page<AssetHost> page = 
             new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(current, size);
@@ -35,6 +35,9 @@ public class AssetController {
         if (ipAddr != null && !ipAddr.isEmpty()) {
             wrapper.like(AssetHost::getIpAddr, ipAddr);
         }
+        if (cabinetId != null && !cabinetId.isEmpty()) {
+            wrapper.eq(AssetHost::getCabinetId, cabinetId);
+        }
         
         wrapper.orderByDesc(AssetHost::getCreateTime);
         
@@ -45,20 +48,19 @@ public class AssetController {
     // 保存或更新主机
     @PostMapping("/host/save")
     public Result<String> save(@RequestBody AssetHost host) {
-        // 【物理台账核心逻辑】检查 3D 坐标防重复/防冲突
-        if (host.getPosX() != null && host.getPosY() != null && host.getPosZ() != null) {
+        // 【核心业务逻辑修复】检查机柜插槽冲突：同一个机柜的同一个 U 位只能有一台物理机
+        if (host.getCabinetId() != null && host.getRackPos() != null) {
             com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AssetHost> checkWrapper = 
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-            checkWrapper.eq(AssetHost::getPosX, host.getPosX())
-                        .eq(AssetHost::getPosY, host.getPosY())
-                        .eq(AssetHost::getPosZ, host.getPosZ());
+            checkWrapper.eq(AssetHost::getCabinetId, host.getCabinetId())
+                        .eq(AssetHost::getRackPos, host.getRackPos());
             
             if (host.getId() != null) {
                 checkWrapper.ne(AssetHost::getId, host.getId()); // 修改时排除自己
             }
             
             if (assetHostMapper.selectCount(checkWrapper) > 0) {
-                return Result.error("保存失败：该 3D 机柜位置已被其他资产占用，坐标不能重复！");
+                return Result.error("保存失败：机柜 " + host.getCabinetId() + " 的 " + host.getRackPos() + "U 插槽已被其他资产占用！");
             }
         }
 
