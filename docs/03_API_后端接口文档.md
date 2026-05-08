@@ -38,17 +38,27 @@
 - 说明：支持绑定 cabinet_id 和 rack_pos。保存时不再接收坐标字段，彻底解耦物理坐标。
 
 ## 3. 任务中心 (Task Center)
-### 3.1 任务列表查询
-**接口路径**: `GET /api/pipeline/tasks`
-- 说明：展示所有历史执行过的运维动作。
+### 3.1 预案方案库 CRUD ✔已实现
+**接口路径**: `GET /api/task/plan/list`
+- Params: `current, size, planName, serviceId, planType`
+- 说明：分页查询，支持按名称/服务/类型筛选，按优先级升序、创建时间降序排列。
 
-### 3.2 触发动作指令
-**接口路径**: `POST /api/pipeline/execute`
-- 说明：下发容灾/演练指令。
+**接口路径**: `POST /api/task/plan/save`
+- Body: TaskPlan 对象
+- 说明：新增或更新预案（saveOrUpdate），同服务下同名预案校验唯一性。
 
-### 3.3 终端实时日志拉取
-**接口路径**: `GET /api/pipeline/logs/{taskId}`
-- 说明：前端控制台不断轮训此口获取增量日志。
+**接口路径**: `DELETE /api/task/plan/delete/{id}`
+
+**接口路径**: `PUT /api/task/plan/toggle/{id}`
+- 说明：启用/禁用预案，切换 status 字段。
+
+### 3.2 触发演练执行（待实现）
+**接口路径**: `POST /api/task/record/trigger`
+- 说明：根据 planId 创建执行流水记录，异步驱动演练步骤，结合 WebSocket 推送日志。
+
+### 3.3 终端实时日志拉取（待实现）
+**接口路径**: `WS /ws/task/log/{taskId}`
+- 说明：WebSocket 双向通道，前端 Xterm.js 订阅日志流。
 
 ## 4. 系统管理 (System Management)
 ### 4.1 登录获取令牌

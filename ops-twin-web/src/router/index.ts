@@ -47,7 +47,7 @@ const routes: Array<RouteRecordRaw> = [
             {
                 path: 'tasks/strategy',
                 component: () => import('@/views/tasks/strategy.vue'),
-                meta: { title: '预案仓库' }
+                meta: { title: '预案方案库' }
             },
             {
                 path: 'tasks/terminal',
