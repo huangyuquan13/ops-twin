@@ -45,6 +45,7 @@
         @nodes-change="onNodesChange"
         @edges-change="onEdgesChange"
         @connect="onConnect"
+        @edge-double-click="onEdgeDoubleClick"
       >
         <Background pattern-color="#aaa" gap="15" />
         <Controls />
@@ -142,8 +143,38 @@ let skipDirty = false; // 用于在初始化加载数据时跳过脏检查
 
 // 连线逻辑
 const onConnect = (params: any) => {
+  // 可以在连线时增加一些默认样式，比如动画效果
+  params.animated = false;
   addEdges([params]);
   isDirty.value = true;
+};
+
+// 连线双击事件：给线加文字标签
+const onEdgeDoubleClick = ({ edge }: any) => {
+  ElMessageBox.prompt('请输入连线说明文字（如果想清除文字，请清空输入框后点确定）', '编辑连线标签', {
+    confirmButtonText: '确定保存',
+    cancelButtonText: '取消',
+    inputValue: edge.label || '',
+  }).then(({ value }) => {
+    const index = elements.value.findIndex(e => e.id === edge.id);
+    if (index !== -1) {
+      elements.value[index].label = value;
+      // 只有当有文字时才设置样式，否则清空样式
+      if (value) {
+        elements.value[index].style = { strokeWidth: 2, stroke: '#909399' };
+        elements.value[index].labelBgStyle = { fill: '#ffffff', color: '#fff', fillOpacity: 0.8 };
+        elements.value[index].labelBgPadding = [4, 4];
+        elements.value[index].labelBgBorderRadius = 4;
+        elements.value[index].labelStyle = { fill: '#303133', fontWeight: 600, fontSize: 12 };
+      } else {
+        elements.value[index].style = {};
+      }
+      elements.value = [...elements.value]; // 触发响应式更新
+      isDirty.value = true;
+    }
+  }).catch(() => {
+    // 用户点击取消或关闭窗口，什么都不做，保留原标签
+  });
 };
 
 // 变更监听
