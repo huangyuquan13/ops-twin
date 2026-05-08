@@ -47,6 +47,12 @@
       >
         <!-- ... 列定义保持不变 ... -->
         <el-table-column prop="hostname" label="主机名称" min-width="150" />
+        <el-table-column prop="hostType" label="主机类型" width="120">
+          <template #default="scope">
+            <el-tag size="small" v-if="scope.row.hostType">{{ scope.row.hostType }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="description" label="用途描述" min-width="150" show-overflow-tooltip />
         <el-table-column prop="ipAddr" label="IP地址" width="140" />
         <el-table-column prop="status" label="状态" width="100">
           <template #default="scope">
@@ -113,6 +119,23 @@
           <el-col :span="24">
             <el-form-item label="主机名称" prop="hostname">
               <el-input v-model="form.hostname" placeholder="如：SRV-WEB-01" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="主机类型" prop="hostType">
+              <el-select v-model="form.hostType" placeholder="如：WEB, DB, APP" filterable allow-create default-first-option>
+                <el-option label="WEB (前置网关)" value="WEB" />
+                <el-option label="APP (应用服务)" value="APP" />
+                <el-option label="DB (数据库)" value="DB" />
+                <el-option label="CACHE (缓存)" value="CACHE" />
+                <el-option label="LB (负载均衡)" value="LB" />
+                <el-option label="MQ (消息队列)" value="MQ" />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="用途描述" prop="description">
+              <el-input v-model="form.description" placeholder="一句话描述用途" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -201,6 +224,8 @@ const formRef = ref();
 const form = ref({
   id: null,
   hostname: "",
+  hostType: "APP",
+  description: "",
   ipAddr: "",
   status: 1,
   cpuCores: 8,
@@ -275,12 +300,13 @@ const handleReset = () => {
   fetchList();
 };
 
-// 打开新增弹窗
 const handleAdd = () => {
   dialogTitle.value = "新增物理资产";
   form.value = {
     id: null,
     hostname: "",
+    hostType: "APP",
+    description: "",
     ipAddr: "",
     status: 1,
     cpuCores: 8,

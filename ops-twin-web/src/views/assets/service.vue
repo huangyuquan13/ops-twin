@@ -66,8 +66,14 @@
         >
           <div class="host-icon"><el-icon><Cpu /></el-icon></div>
           <div class="host-info">
-            <div class="host-name">{{ host.hostname }}</div>
+            <div class="host-name">
+              {{ host.hostname }}
+              <el-tag size="small" :type="getHostTypeColor(host.hostType).tag" style="margin-left: 5px">
+                {{ host.hostType || 'SERVER' }}
+              </el-tag>
+            </div>
             <div class="host-ip">{{ host.ipAddr }}</div>
+            <div class="host-desc" v-if="host.description">{{ host.description }}</div>
           </div>
         </div>
       </div>
@@ -286,6 +292,19 @@ const saveTopology = async () => {
   }
 };
 
+// 获取主机类型的颜色和标签配置
+const getHostTypeColor = (type: string) => {
+  const upperType = type ? type.toUpperCase() : '';
+  switch(upperType) {
+    case 'WEB': return { bg: '#e1f3d8', border: '#67c23a', tag: 'success' };
+    case 'APP': return { bg: '#d9ecff', border: '#409eff', tag: 'primary' };
+    case 'DB': return { bg: '#faecd8', border: '#e6a23c', tag: 'warning' };
+    case 'CACHE': return { bg: '#e1f3d8', border: '#b3e19d', tag: 'success' };
+    case 'LB': return { bg: '#fde2e2', border: '#f56c6c', tag: 'danger' };
+    default: return { bg: '#f4f4f5', border: '#909399', tag: 'info' };
+  }
+};
+
 // 拖拽逻辑
 const onDragStart = (event: any, host: any) => {
   if (event.dataTransfer) {
@@ -321,12 +340,23 @@ const onDrop = (event: any) => {
     y: event.clientY - top 
   }); 
   
+  const typeColor = getHostTypeColor(host.hostType);
   const newNode = {
     id: `host-${host.id}`,
     type: 'default',
     position,
-    data: { label: `${host.hostname}\n(${host.ipAddr})`, hostId: host.id },
-    style: { background: '#f0f9eb', border: '1px solid #67c23a', borderRadius: '4px', padding: '10px' }
+    data: { 
+      label: `[${host.hostType || 'SERVER'}] ${host.hostname}\n(${host.ipAddr})`, 
+      hostId: host.id 
+    },
+    style: { 
+      background: typeColor.bg, 
+      border: `2px solid ${typeColor.border}`, 
+      borderRadius: '6px', 
+      padding: '10px',
+      fontWeight: 'bold',
+      boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
+    }
   };
   
   elements.value.push(newNode);
@@ -484,6 +514,14 @@ onMounted(() => {
   font-weight: bold;
   font-size: 14px;
   color: #303133;
+  display: flex;
+  align-items: center;
+}
+
+.host-desc {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
 }
 
 .host-ip {
