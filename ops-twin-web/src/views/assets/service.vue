@@ -14,10 +14,23 @@
     </div>
 
     <div class="main-canvas" @drop="onDrop" @dragover="onDragOver">
-      <div class="toolbar" v-if="activeService">
-        <span class="service-title">当前服务: {{ activeService.serviceName }}</span>
-        <el-button type="success" :icon="Check" @click="saveTopology">保存拓扑</el-button>
-        <el-button type="danger" :icon="Delete" @click="deleteService">删除服务</el-button>
+      <div class="canvas-header" v-if="activeService">
+        <div class="header-left">
+          <el-tag type="info" effect="plain" class="service-tag">逻辑服务</el-tag>
+          <span class="service-title">{{ activeService.serviceName }}</span>
+          <span v-if="isDirty" class="status-indicator dirty">● 未保存</span>
+          <span v-else class="status-indicator saved">● 已保存</span>
+        </div>
+        <div class="header-right">
+          <el-button 
+            type="success" 
+            :icon="Check" 
+            :disabled="!isDirty" 
+            :loading="isSaving"
+            @click="saveTopology"
+          >保存拓扑</el-button>
+          <el-button type="danger" plain :icon="Delete" @click="deleteService">删除服务</el-button>
+        </div>
       </div>
       
       <div v-if="!activeService" class="empty-state">
@@ -29,6 +42,7 @@
         v-model="elements" 
         :default-viewport="{ zoom: 1 }" 
         :fit-view-on-init="true" 
+        @nodes-change="onNodesChange"
         @edges-change="onEdgesChange"
         @connect="onConnect"
       >
@@ -81,12 +95,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, nextTick } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Menu, Check, Delete, Cpu } from '@element-plus/icons-vue';
 import { VueFlow, useVueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
+import { onBeforeRouteLeave } from 'vue-router';
 import request from '@/api/request';
 
 // 引入样式
@@ -114,9 +129,25 @@ const filteredHosts = computed(() => {
 // Vue Flow 数据
 const elements = ref<any[]>([]);
 
+// 状态追踪
+const isDirty = ref(false);
+const isSaving = ref(false);
+let skipDirty = false; // 用于在初始化加载数据时跳过脏检查
+
 // 连线逻辑
 const onConnect = (params: any) => {
   addEdges([params]);
+  isDirty.value = true;
+};
+
+// 变更监听
+const onNodesChange = () => { 
+  if (skipDirty) return;
+  isDirty.value = true; 
+};
+const onEdgesChange = () => { 
+  if (skipDirty) return;
+  isDirty.value = true; 
 };
 
 // 表单相关
@@ -167,17 +198,54 @@ const submitServiceForm = async () => {
 };
 
 const handleSelectService = async (index: string) => {
+  // 如果当前有未保存的修改，拦截切换
+  if (isDirty.value) {
+    try {
+      await ElMessageBox.confirm(
+        '当前拓扑图有未保存的修改，切换服务将丢失这些修改，确定继续吗？',
+        '提示',
+        { confirmButtonText: '确定切换', cancelButtonText: '取消', type: 'warning' }
+      );
+    } catch (e) {
+      return;
+    }
+  }
+
   activeServiceId.value = index;
   const res: any = await request.get(`/api/asset/service/topology/${index}`);
   if (res.code === 200) {
+    skipDirty = true; // 锁定：忽略因加载数据引起的内部变更事件
     const topology = res.data.topologyJson;
     if (topology) {
       elements.value = JSON.parse(topology);
     } else {
       elements.value = [];
     }
+    
+    // 给 Vue Flow 足够的初始化和布局计算时间
+    setTimeout(() => {
+      isDirty.value = false;
+      skipDirty = false;
+    }, 150);
   }
 };
+
+// 路由离开守卫：防止跳转到其他页面时丢失数据
+onBeforeRouteLeave((to, from, next) => {
+  if (isDirty.value) {
+    ElMessageBox.confirm(
+      '您有未保存的拓扑变更，离开此页面将导致修改丢失，确定离开吗？',
+      '确认离开',
+      { confirmButtonText: '离开', cancelButtonText: '留在页面', type: 'warning' }
+    ).then(() => {
+      next();
+    }).catch(() => {
+      next(false);
+    });
+  } else {
+    next();
+  }
+});
 
 const deleteService = () => {
   if (!activeServiceId.value) return;
@@ -194,22 +262,27 @@ const deleteService = () => {
 
 const saveTopology = async () => {
   if (!activeServiceId.value) return;
-  // 获取当前图中的所有节点提取主机 ID
-  const hostIds = elements.value
-    .filter(e => !e.source) // 过滤掉连线，只保留节点
-    .map(e => e.data?.hostId)
-    .filter(id => id != null);
+  isSaving.value = true;
+  try {
+    const hostIds = elements.value
+      .filter(e => !e.source)
+      .map(e => e.data?.hostId)
+      .filter(id => id != null);
 
-  const payload = {
-    serviceId: activeServiceId.value,
-    topologyJson: JSON.stringify(elements.value),
-    hostIds
-  };
-  const res: any = await request.post('/api/asset/service/topology/save', payload);
-  if (res.code === 200) {
-    ElMessage.success('拓扑保存成功');
-  } else {
-    ElMessage.error('拓扑保存失败');
+    const payload = {
+      serviceId: activeServiceId.value,
+      topologyJson: JSON.stringify(elements.value),
+      hostIds
+    };
+    const res: any = await request.post('/api/asset/service/topology/save', payload);
+    if (res.code === 200) {
+      ElMessage.success('拓扑保存成功');
+      isDirty.value = false;
+    } else {
+      ElMessage.error('拓扑保存失败');
+    }
+  } finally {
+    isSaving.value = false;
   }
 };
 
@@ -233,14 +306,20 @@ const onDrop = (event: any) => {
   if (!hostData || !activeService.value) return;
   
   const host = JSON.parse(hostData);
-  // 防止重复拖入同一主机
   if (elements.value.some(e => e.data?.hostId === host.id)) {
     ElMessage.warning('该物理资产已在拓扑图中');
     return;
   }
 
-  // 计算放置位置
-  const position = project({ x: event.clientX - 250, y: event.clientY - 60 }); 
+  // 获取画布相对于视口的边界
+  const target = event.currentTarget;
+  const { left, top } = target.getBoundingClientRect();
+
+  // 精确计算坐标：鼠标视口坐标 - 画布起始坐标
+  const position = project({ 
+    x: event.clientX - left, 
+    y: event.clientY - top 
+  }); 
   
   const newNode = {
     id: `host-${host.id}`,
@@ -251,10 +330,7 @@ const onDrop = (event: any) => {
   };
   
   elements.value.push(newNode);
-};
-
-const onEdgesChange = (changes: any) => {
-  // 可以在这里处理连线事件，比如自动保存线关系
+  isDirty.value = true;
 };
 
 onMounted(() => {
@@ -310,24 +386,58 @@ onMounted(() => {
   background: #fafafa;
 }
 
-.toolbar {
+.canvas-header {
   position: absolute;
   top: 15px;
   left: 15px;
+  right: 15px;
   z-index: 10;
   display: flex;
-  gap: 10px;
+  justify-content: space-between;
   align-items: center;
-  background: #fff;
-  padding: 8px 15px;
-  border-radius: 4px;
-  box-shadow: 0 2px 12px 0 rgba(0,0,0,0.1);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(4px);
+  padding: 10px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.service-tag {
+  font-weight: bold;
 }
 
 .service-title {
-  font-weight: bold;
+  font-size: 16px;
+  font-weight: 600;
   color: #303133;
-  margin-right: 10px;
+}
+
+.status-indicator {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+
+.status-indicator.dirty {
+  color: #e6a23c;
+  background: rgba(230, 162, 60, 0.1);
+}
+
+.status-indicator.saved {
+  color: #67c23a;
+  background: rgba(103, 194, 58, 0.1);
+}
+
+.header-right {
+  display: flex;
+  gap: 10px;
 }
 
 .empty-state {
