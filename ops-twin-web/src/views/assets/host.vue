@@ -211,7 +211,12 @@ const form = ref({
 
 const rules = {
   hostname: [{ required: true, message: "请输入主机名称", trigger: "blur" }],
-  ipAddr: [{ required: true, message: "请输入有效的IP地址", trigger: "blur" }],
+  ipAddr: [
+    { required: true, message: "请输入 IP 地址", trigger: "blur" },
+    { pattern: /^((25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(25[0-5]|2[0-4]\d|[01]?\d\d?)$/, message: "IP 地址格式不正确", trigger: "blur" }
+  ],
+  cabinetId: [{ required: true, message: "请选择归属机柜", trigger: "change" }],
+  rackPos: [{ required: true, message: "请输入插槽位置", trigger: "blur" }],
 };
 
 // 核心功能：获取后端资产列表

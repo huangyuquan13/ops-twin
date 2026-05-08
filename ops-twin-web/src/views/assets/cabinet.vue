@@ -23,6 +23,9 @@
         <el-button type="success" @click="handleAdd">
           <el-icon><Plus /></el-icon> 新增机柜
         </el-button>
+        <el-button @click="fetchList">
+          <el-icon><Refresh /></el-icon> 刷新
+        </el-button>
       </div>
     </div>
 
@@ -107,7 +110,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Plus } from "@element-plus/icons-vue";
+import { Plus, Refresh } from "@element-plus/icons-vue";
 import request from "@/api/request";
 
 const loading = ref(false);
@@ -136,6 +139,8 @@ const form = ref<any>({
 const rules = {
   cabinetId: [{ required: true, message: "请输入机柜编号", trigger: "blur" }],
   cabinetName: [{ required: true, message: "请输入机柜名称", trigger: "blur" }],
+  posX: [{ required: true, message: "请输入 X 坐标", trigger: "blur" }],
+  posZ: [{ required: true, message: "请输入 Z 坐标", trigger: "blur" }],
 };
 
 const fetchList = async () => {
@@ -244,6 +249,10 @@ onMounted(() => {
   justify-content: space-between;
   align-items: flex-start;
   box-shadow: 0 1px 4px rgba(0,21,41,0.08);
+}
+.action-bar {
+  display: flex;
+  gap: 12px;
 }
 .table-card {
   background: #fff;

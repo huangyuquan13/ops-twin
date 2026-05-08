@@ -45,22 +45,50 @@ public class AssetController {
         return Result.success(result);
     }
 
+    @Autowired
+    private com.ops.twin.mapper.AssetCabinetMapper assetCabinetMapper;
+
     // 保存或更新主机
     @PostMapping("/host/save")
     public Result<String> save(@RequestBody AssetHost host) {
-        // 【核心业务逻辑修复】检查机柜插槽冲突：同一个机柜的同一个 U 位只能有一台物理机
+        // 1. 校验主机名唯一性
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AssetHost> nameWrapper = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        nameWrapper.eq(AssetHost::getHostname, host.getHostname());
+        if (host.getId() != null) nameWrapper.ne(AssetHost::getId, host.getId());
+        if (assetHostMapper.selectCount(nameWrapper) > 0) {
+            return Result.error("主机名称 [" + host.getHostname() + "] 已被占用");
+        }
+
+        // 2. 校验 IP 地址唯一性
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AssetHost> ipWrapper = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+        ipWrapper.eq(AssetHost::getIpAddr, host.getIpAddr());
+        if (host.getId() != null) ipWrapper.ne(AssetHost::getId, host.getId());
+        if (assetHostMapper.selectCount(ipWrapper) > 0) {
+            return Result.error("IP 地址 [" + host.getIpAddr() + "] 已存在");
+        }
+
+        // 3. 校验机柜插槽冲突及高度溢出
         if (host.getCabinetId() != null && host.getRackPos() != null) {
-            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AssetHost> checkWrapper = 
+            // 首先获取机柜信息，查出其 maxU
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<com.ops.twin.entity.AssetCabinet> cabWrapper = new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
+            cabWrapper.eq(com.ops.twin.entity.AssetCabinet::getCabinetId, host.getCabinetId());
+            com.ops.twin.entity.AssetCabinet cabinet = assetCabinetMapper.selectOne(cabWrapper);
+            
+            if (cabinet != null && host.getRackPos() > cabinet.getMaxU()) {
+                return Result.error("保存失败：机柜 " + host.getCabinetId() + " 最高只有 " + cabinet.getMaxU() + "U，无法放置在 " + host.getRackPos() + "U 位");
+            }
+
+            com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<AssetHost> slotWrapper = 
                 new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<>();
-            checkWrapper.eq(AssetHost::getCabinetId, host.getCabinetId())
-                        .eq(AssetHost::getRackPos, host.getRackPos());
+            slotWrapper.eq(AssetHost::getCabinetId, host.getCabinetId())
+                       .eq(AssetHost::getRackPos, host.getRackPos());
             
             if (host.getId() != null) {
-                checkWrapper.ne(AssetHost::getId, host.getId()); // 修改时排除自己
+                slotWrapper.ne(AssetHost::getId, host.getId());
             }
             
-            if (assetHostMapper.selectCount(checkWrapper) > 0) {
-                return Result.error("保存失败：机柜 " + host.getCabinetId() + " 的 " + host.getRackPos() + "U 插槽已被其他资产占用！");
+            if (assetHostMapper.selectCount(slotWrapper) > 0) {
+                return Result.error("保存失败：机柜 " + host.getCabinetId() + " 的 " + host.getRackPos() + "U 插槽已被占用！");
             }
         }
 

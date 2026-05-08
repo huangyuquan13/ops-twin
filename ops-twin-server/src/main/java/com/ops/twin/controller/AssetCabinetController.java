@@ -64,7 +64,17 @@ public class AssetCabinetController {
             return Result.error("机柜编号 [" + cabinet.getCabinetId() + "] 已存在");
         }
 
-        // 2. 校验空间坐标唯一性 (防止机柜重叠)
+        // 2. 校验名称唯一性
+        LambdaQueryWrapper<AssetCabinet> nameWrapper = new LambdaQueryWrapper<>();
+        nameWrapper.eq(AssetCabinet::getCabinetName, cabinet.getCabinetName());
+        if (cabinet.getId() != null) {
+            nameWrapper.ne(AssetCabinet::getId, cabinet.getId());
+        }
+        if (cabinetService.count(nameWrapper) > 0) {
+            return Result.error("机柜名称 [" + cabinet.getCabinetName() + "] 已存在，请使用唯一的描述名称");
+        }
+
+        // 3. 校验空间坐标唯一性 (防止机柜重叠)
         LambdaQueryWrapper<AssetCabinet> posWrapper = new LambdaQueryWrapper<>();
         posWrapper.eq(AssetCabinet::getPosX, cabinet.getPosX())
                   .eq(AssetCabinet::getPosZ, cabinet.getPosZ());
