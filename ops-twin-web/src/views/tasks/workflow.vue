@@ -257,8 +257,27 @@ const handleBack = () => router.push('/tasks/strategy');
 .header-left { display: flex; align-items: center; gap: 12px; }
 .title { color: #e8eaf6; font-size: 15px; margin: 0; }
 .workflow-content { flex: 1; display: flex; overflow: hidden; }
-.node-panel { width: 220px; background: #0f1022; border-right: 1px solid rgba(255,255,255,0.08); padding: 16px 14px; display: flex; flex-direction: column; user-select: none; }
-.node-list { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
+.node-panel { 
+  width: 220px; 
+  background: #0f1022; 
+  border-right: 1px solid rgba(255,255,255,0.08); 
+  padding: 24px 14px; /* 增加顶部边距，防止被 Header 遮挡 */
+  display: flex; 
+  flex-direction: column; 
+  user-select: none; 
+}
+.panel-title { 
+  color: #e8eaf6; 
+  font-size: 14px; 
+  font-weight: 600; 
+  margin-bottom: 4px; 
+}
+.panel-subtitle { 
+  color: #8a8da8; 
+  font-size: 11px; 
+  margin-bottom: 15px; 
+}
+.node-list { display: flex; flex-direction: column; gap: 10px; margin-top: 5px; }
 .dnd-node { padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); color: #ccd0f0; cursor: grab; display: flex; align-items: center; gap: 12px; }
 .icon-danger { color: #f56c6c; } .icon-warning { color: #e6a23c; } .icon-success { color: #67c23a; } .icon-primary { color: #409eff; } .icon-info { color: #909399; }
 .panel-tip { margin-top: auto; padding-top: 20px; }
