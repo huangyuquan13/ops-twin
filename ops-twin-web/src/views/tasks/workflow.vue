@@ -83,7 +83,15 @@
                 :key="h.hostname"
                 :label="`${h.hostname} (${h.ipAddr})`"
                 :value="h.hostname"
-              />
+              >
+                <span style="display: flex; align-items: center; gap: 8px;">
+                  <el-tag :type="getHostTypeTag(h.hostType)" size="small" effect="dark">
+                    {{ h.hostType || 'SERVER' }}
+                  </el-tag>
+                  <span>{{ h.hostname }}</span>
+                  <span style="color: #909399; font-size: 12px;">{{ h.ipAddr }}</span>
+                </span>
+              </el-option>
             </el-select>
             <span v-if="hostOptions.length === 0" style="color: #909399; font-size: 12px;">
               暂无可用主机，请先在"逻辑服务映射"中为此服务绑定物理主机
@@ -129,7 +137,15 @@ const planId    = ref(route.query.id as string);
 const planName  = ref((route.query.name as string) || '');
 const serviceId = ref((route.query.serviceId as string) || '');
 const nodes     = ref<any[]>([]);
-const hostOptions = ref<{ hostname: string; ipAddr: string }[]>([]);
+const hostOptions = ref<{ hostname: string; ipAddr: string; hostType: string }[]>([]);
+
+const getHostTypeTag = (type: string) => {
+  const map: Record<string, string> = {
+    WEB: 'success', APP: 'primary', DB: 'warning',
+    CACHE: 'success', LB: 'danger', MQ: 'info',
+  };
+  return map[type?.toUpperCase()] || 'info';
+};
 const edges    = ref<any[]>([]);
 const drawerVisible = ref(false);
 const selectedNode  = ref<any>(null);
