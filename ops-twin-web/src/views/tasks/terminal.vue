@@ -11,12 +11,19 @@
         <span class="topbar-meta" v-if="planName">预案：{{ planName }}</span>
         <span class="topbar-meta" v-if="recordId">流水 #{{ recordId }}</span>
         <el-button size="small" :icon="ArrowLeft" @click="goBack">返回方案库</el-button>
+        <el-button
+          v-if="recordId && (runStatus === 'RUNNING' || runStatus === 'PENDING')"
+          size="small"
+          type="danger"
+          :icon="VideoPause"
+          @click="handleTerminate"
+        >终止命令</el-button>
         <el-button size="small" :icon="Delete" @click="clearLogs">清屏</el-button>
       </div>
     </div>
 
     <!-- 步骤进度条（仅在运行中显示） -->
-    <div class="progress-bar-wrap" v-if="runStatus === 'RUNNING' || runStatus === 'PENDING'">
+    <div class="progress-bar-wrap" v-if="(runStatus === 'RUNNING' || runStatus === 'PENDING')">
       <div class="progress-track">
         <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
       </div>
@@ -64,7 +71,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowLeft, Delete } from '@element-plus/icons-vue';
+import { ArrowLeft, Delete, VideoPause } from '@element-plus/icons-vue';
+import { ElMessageBox } from 'element-plus';
 import request from '@/api/request';
 
 const route    = useRouter();
@@ -101,6 +109,7 @@ const statusClass = computed(() => ({
   'badge-running': runStatus.value === 'RUNNING',
   'badge-success': runStatus.value === 'SUCCESS',
   'badge-failed':  runStatus.value === 'FAILED',
+  'badge-cancelled': runStatus.value === 'CANCELLED',
 }));
 
 const statusLabel = computed(() => ({
@@ -108,6 +117,7 @@ const statusLabel = computed(() => ({
   RUNNING: '🟢 执行中',
   SUCCESS: '✅ 成功',
   FAILED:  '❌ 失败',
+  CANCELLED: '⏹ 已终止',
 }[runStatus.value] ?? runStatus.value));
 
 // ============ 连接 WebSocket ============
@@ -132,8 +142,12 @@ const connectWs = () => {
       runStatus.value = 'SUCCESS';
       stopProgressSimulation(100);
       stopElapsedTimer();
-    } else if (msg.includes('[ERROR]') && msg.includes('失败')) {
+    } else if (msg.includes('[ERROR]')) {
       runStatus.value = 'FAILED';
+      stopProgressSimulation(progressPct.value);
+      stopElapsedTimer();
+    } else if (msg.includes('用户已终止演练任务')) {
+      runStatus.value = 'CANCELLED';
       stopProgressSimulation(progressPct.value);
       stopElapsedTimer();
     }
@@ -228,6 +242,31 @@ const colorize = (line: string) => {
 // ============ 清屏 ============
 const clearLogs = () => { logs.value = []; };
 
+// ============ 终止命令 ============
+const handleTerminate = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '终止后将无法恢复，确定要终止当前演练任务吗？',
+      '确认终止',
+      { confirmButtonText: '确定终止', cancelButtonText: '取消', type: 'warning' }
+    );
+  } catch {
+    return; // 用户取消
+  }
+
+  try {
+    const res: any = await request.post(`/api/task/record/${recordId.value}/terminate`);
+    if (res.code === 200) {
+      logs.value.push('[SYSTEM] ⏹ 用户已发起终止命令...');
+      runStatus.value = 'CANCELLED';
+      stopProgressSimulation(progressPct.value);
+      stopElapsedTimer();
+    }
+  } catch {
+    // ignore
+  }
+};
+
 // ============ 返回方案库 ============
 const goBack = () => {
   if (ws) ws.close();
@@ -318,7 +357,8 @@ onUnmounted(() => {
 .badge-pending { color: #faad14; border-color: #faad14; background: rgba(250,173,20,0.1); }
 .badge-running { color: #52c41a; border-color: #52c41a; background: rgba(82,196,26,0.1); animation: badgePulse 1.5s infinite; }
 .badge-success { color: #c5f37b; border-color: #c5f37b; background: rgba(197,243,123,0.1); }
-.badge-failed  { color: #ff4d4f; border-color: #ff4d4f; background: rgba(255,77,79,0.1); }
+.badge-failed    { color: #ff4d4f; border-color: #ff4d4f; background: rgba(255,77,79,0.1); }
+.badge-cancelled { color: #faad14; border-color: #faad14; background: rgba(250,173,20,0.1); }
 
 @keyframes badgePulse {
   0%, 100% { opacity: 1; }

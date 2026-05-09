@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 演练执行引擎组件
@@ -31,6 +32,9 @@ public class TaskExecutionEngine {
     private TaskRecordMapper taskRecordMapper;
 
     private static final DateTimeFormatter LOG_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
+
+    /** 取消标志：recordId -> 是否已请求取消 */
+    private final ConcurrentHashMap<Long, Boolean> cancelFlags = new ConcurrentHashMap<>();
 
     /**
      * 核心异步执行方法
@@ -56,46 +60,65 @@ public class TaskExecutionEngine {
 
             String stepsJson = plan.getStepsJson();
             if (stepsJson == null || stepsJson.isBlank()) {
-                runDefaultDemo(rid);
+                pushLog(rid, "[ERROR] 预案【" + plan.getPlanName() + "】未配置执行步骤，请先在编排页面（workflow）中设计演练流程");
+                updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "未配置执行步骤");
+                return;
+            }
+
+            Object raw = JSON.parse(stepsJson);
+            JSONArray steps;
+            if (raw instanceof JSONObject) {
+                steps = ((JSONObject) raw).getJSONArray("steps");
+            } else if (raw instanceof JSONArray) {
+                steps = (JSONArray) raw;
             } else {
-                // 1. 全格式兼容解析逻辑
-                Object raw = JSON.parse(stepsJson);
-                JSONArray steps;
-                if (raw instanceof JSONObject) {
-                    // 如果是对象格式 {"steps": [...], "layout": ...}
-                    steps = ((JSONObject) raw).getJSONArray("steps");
-                } else if (raw instanceof JSONArray) {
-                    // 如果是数组格式 [...]
-                    steps = (JSONArray) raw;
-                } else {
-                    log.error("[引擎] 无法识别的 stepsJson 格式");
+                log.error("[引擎] 无法识别的 stepsJson 格式");
+                return;
+            }
+
+            if (steps == null) {
+                pushLog(rid, "[ERROR] 预案解析失败：steps 数组为空，请检查编排配置");
+                updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "steps 数组为空");
+                return;
+            }
+
+            int realStepCount = 0;
+            for (int i = 0; i < steps.size(); i++) {
+                JSONObject step = steps.getJSONObject(i);
+                if (step != null && !step.containsKey("isLayoutMeta")) {
+                    realStepCount++;
+                }
+            }
+
+            if (realStepCount == 0) {
+                pushLog(rid, "[ERROR] 预案未包含任何可执行步骤，请先在编排页面中设计演练流程");
+                updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "无可执行步骤");
+                return;
+            }
+
+            int currentExecIndex = 1;
+            for (int i = 0; i < steps.size(); i++) {
+                JSONObject step = steps.getJSONObject(i);
+                if (step == null) continue;
+
+                // 跳过布局元数据
+                if (step.containsKey("isLayoutMeta") && step.getBooleanValue("isLayoutMeta")) {
+                    continue;
+                }
+
+                // 检查是否被取消
+                if (Boolean.TRUE.equals(cancelFlags.get(recordId))) {
+                    cancelFlags.remove(recordId);
+                    pushLog(rid, "");
+                    pushLog(rid, "[WARN] ═══════════════════════════════════════════");
+                    pushLog(rid, "[WARN]  用户已终止演练任务");
+                    pushLog(rid, "[WARN] ═══════════════════════════════════════════");
+                    pushLog(rid, "");
+                    updateStatus(recordId, "CANCELLED", System.currentTimeMillis() - startMs, "用户手动终止");
                     return;
                 }
 
-                if (steps == null) {
-                    runDefaultDemo(rid);
-                    return;
-                }
-
-                int realStepCount = 0;
-                for (int i = 0; i < steps.size(); i++) {
-                    JSONObject step = steps.getJSONObject(i);
-                    if (step != null && !step.containsKey("isLayoutMeta")) {
-                        realStepCount++;
-                    }
-                }
-
-                int currentExecIndex = 1;
-                for (int i = 0; i < steps.size(); i++) {
-                    JSONObject step = steps.getJSONObject(i);
-                    if (step == null) continue;
-                    
-                    // 跳过布局元数据
-                    if (step.containsKey("isLayoutMeta") && step.getBooleanValue("isLayoutMeta")) {
-                        continue;
-                    }
-                    runStep(rid, step, currentExecIndex++, realStepCount);
-                }
+                runStep(rid, step, currentExecIndex++, realStepCount);
             }
 
             long durationMs = System.currentTimeMillis() - startMs;
@@ -118,6 +141,13 @@ public class TaskExecutionEngine {
         }
     }
 
+    /**
+     * 请求取消指定任务
+     */
+    public void cancel(Long recordId) {
+        cancelFlags.put(recordId, true);
+    }
+
     private void runStep(String rid, JSONObject step, int current, int total) throws InterruptedException {
         String action  = step.getString("action");
         String target  = step.getString("target");
@@ -126,20 +156,6 @@ public class TaskExecutionEngine {
         pushLog(rid, String.format("[STEP %d/%d] 正在执行: %s → 目标: %s", current, total, action, target));
         Thread.sleep(waitMs);
         pushLog(rid, String.format("[STEP %d/%d] ✓ 完成", current, total));
-    }
-
-    private void runDefaultDemo(String rid) throws InterruptedException {
-        String[][] demo = {
-            { "HEALTH_CHECK",  "全量节点", "1000" },
-            { "STOP_NODE",     "Pay-DB-Master", "2000" },
-            { "PROMOTE_SLAVE", "Pay-DB-Slave", "1500" },
-            { "HEALTH_CHECK",  "新主节点", "1000" }
-        };
-        for (int i = 0; i < demo.length; i++) {
-            pushLog(rid, String.format("[STEP %d/%d] 正在执行: %s → 目标: %s", i + 1, demo.length, demo[i][0], demo[i][1]));
-            Thread.sleep(Integer.parseInt(demo[i][2]));
-            pushLog(rid, String.format("[STEP %d/%d] ✓ 完成", i + 1, demo.length));
-        }
     }
 
     private void pushLog(String recordId, String message) {
@@ -154,7 +170,7 @@ public class TaskExecutionEngine {
         record.setRunStatus(status);
         record.setDurationMs(durationMs);
         record.setResultMsg(resultMsg);
-        if ("SUCCESS".equals(status) || "FAILED".equals(status)) {
+        if ("SUCCESS".equals(status) || "FAILED".equals(status) || "CANCELLED".equals(status)) {
             record.setEndTime(LocalDateTime.now());
         }
         // 使用 Mapper 直接更新，不依赖 Service 接口

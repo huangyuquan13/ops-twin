@@ -89,4 +89,17 @@ public class TaskRecordController {
         TaskRecord record = taskRecordService.getById(id);
         return record != null ? Result.success(record) : Result.error("流水记录不存在");
     }
+
+    /**
+     * 终止正在执行的演练任务
+     * POST /api/task/record/{id}/terminate
+     */
+    @PostMapping("/{id}/terminate")
+    public Result<String> terminate(@PathVariable Long id) {
+        boolean ok = taskRecordService.terminate(id);
+        if (ok) {
+            return Result.success("已发送终止信号");
+        }
+        return Result.error("任务不存在或已结束，无法终止");
+    }
 }

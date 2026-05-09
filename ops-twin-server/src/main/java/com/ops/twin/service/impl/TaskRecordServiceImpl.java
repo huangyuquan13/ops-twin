@@ -42,4 +42,18 @@ public class TaskRecordServiceImpl extends ServiceImpl<TaskRecordMapper, TaskRec
 
         return record.getId();
     }
+
+    @Override
+    public boolean terminate(Long recordId) {
+        TaskRecord record = getById(recordId);
+        if (record == null) {
+            return false;
+        }
+        if (!"RUNNING".equals(record.getRunStatus()) && !"PENDING".equals(record.getRunStatus())) {
+            return false;
+        }
+        // 通知引擎取消
+        executionEngine.cancel(recordId);
+        return true;
+    }
 }

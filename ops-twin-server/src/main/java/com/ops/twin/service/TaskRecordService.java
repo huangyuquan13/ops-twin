@@ -19,4 +19,12 @@ public interface TaskRecordService extends IService<TaskRecord> {
      * @return 新建的任务流水记录 ID
      */
     Long triggerAsync(TaskPlan plan, String operator);
+
+    /**
+     * 终止正在执行的演练任务
+     *
+     * @param recordId 任务流水 ID
+     * @return 是否成功发送终止信号
+     */
+    boolean terminate(Long recordId);
 }
