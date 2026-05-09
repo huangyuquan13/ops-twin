@@ -22,6 +22,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
+        <!-- WebSocket 依赖：用于实时日志推送终端 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
         <!-- MySQL 驱动 -->
         <dependency>
             <groupId>com.mysql</groupId>

@@ -52,13 +52,20 @@
 **接口路径**: `PUT /api/task/plan/toggle/{id}`
 - 说明：启用/禁用预案，切换 status 字段。
 
-### 3.2 触发演练执行（待实现）
-**接口路径**: `POST /api/task/record/trigger`
-- 说明：根据 planId 创建执行流水记录，异步驱动演练步骤，结合 WebSocket 推送日志。
+### 3.2 触发演练执行 ✔已实现
+**接口路径**: `POST /api/task/record/trigger/{planId}`
+- Params: `operator` (可选，默认 admin)
+- 说明：核心异步接口。根据 planId 创建流水记录并立即返回 recordId，随后在后台开启独立线程解析 steps_json 执行演练，并通过 WebSocket 实时推流日志。
+- 返回: `{ recordId: 42, wsPath: "/ws/task/log/42", planName: "..." }`
 
-### 3.3 终端实时日志拉取（待实现）
-**接口路径**: `WS /ws/task/log/{taskId}`
-- 说明：WebSocket 双向通道，前端 Xterm.js 订阅日志流。
+### 3.3 任务流水列表查询 ✔已实现
+**接口路径**: `GET /api/task/record/list`
+- Params: `current, size, planId`
+- 说明：分页查询演练执行历史。
+
+### 3.4 终端实时日志拉取 (WebSocket) ✔已实现
+**接口路径**: `WS /ws/task/log/{recordId}`
+- 说明：基于 Spring WebSocket 的文本协议通道。前端 terminal.vue 进入后自动建立连接，实时接收带有语义标签（如 [INFO], [SUCCESS]）的日志行。
 
 ## 4. 系统管理 (System Management)
 ### 4.1 登录获取令牌

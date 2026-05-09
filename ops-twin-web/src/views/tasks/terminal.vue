@@ -1,112 +1,455 @@
 <template>
-  <div class="page-container">
-    <div class="glass-card">
-      <div class="header">
-        <h2 class="title">实时终端</h2>
-        <div class="status-tag">建设中</div>
+  <div class="terminal-root">
+    <!-- 顶部状态条 -->
+    <div class="terminal-topbar">
+      <div class="topbar-left">
+        <span class="topbar-icon">⚡</span>
+        <span class="topbar-title">智维方舟 · 演练实时终端</span>
+        <div class="status-badge" :class="statusClass">{{ statusLabel }}</div>
       </div>
-      <div class="content">
-        <div class="placeholder-icon">
-          <div class="pulse-circle"></div>
-        </div>
-        <p class="description">该模块正在高效开发中，敬请期待...</p>
+      <div class="topbar-right">
+        <span class="topbar-meta" v-if="planName">预案：{{ planName }}</span>
+        <span class="topbar-meta" v-if="recordId">流水 #{{ recordId }}</span>
+        <el-button size="small" :icon="ArrowLeft" @click="goBack">返回方案库</el-button>
+        <el-button size="small" :icon="Delete" @click="clearLogs">清屏</el-button>
       </div>
+    </div>
+
+    <!-- 步骤进度条（仅在运行中显示） -->
+    <div class="progress-bar-wrap" v-if="runStatus === 'RUNNING' || runStatus === 'PENDING'">
+      <div class="progress-track">
+        <div class="progress-fill" :style="{ width: progressPct + '%' }"></div>
+      </div>
+      <span class="progress-label">{{ progressPct }}% · 正在执行中...</span>
+    </div>
+
+    <!-- 终端主体 -->
+    <div class="terminal-body" ref="terminalRef">
+      <!-- 欢迎头 -->
+      <div class="term-line term-dim" v-if="logs.length === 0 && !isConnected">
+        <span>正在等待任务触发...</span>
+      </div>
+      <div class="term-line term-dim" v-if="logs.length === 0 && isConnected">
+        <span>WebSocket 已连接，等待日志流推送...</span>
+      </div>
+
+      <!-- 日志行 -->
+      <div
+        v-for="(line, idx) in logs"
+        :key="idx"
+        class="term-line"
+        :class="getLineClass(line)"
+      >
+        <span class="term-text" v-html="colorize(line)"></span>
+      </div>
+
+      <!-- 光标闪烁（运行中才显示） -->
+      <div class="term-line" v-if="runStatus === 'RUNNING' || runStatus === 'PENDING'">
+        <span class="cursor-blink">▌</span>
+      </div>
+    </div>
+
+    <!-- 底部信息条 -->
+    <div class="terminal-footer">
+      <span class="footer-dot" :class="{ 'dot-active': isConnected }"></span>
+      <span class="footer-msg">{{ isConnected ? 'WebSocket 已连接' : 'WebSocket 未连接' }}</span>
+      <span class="footer-sep">|</span>
+      <span class="footer-msg">共 {{ logs.length }} 条日志</span>
+      <span class="footer-sep">|</span>
+      <span class="footer-msg">运行时长: {{ elapsedStr }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-// 实时终端组件
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ArrowLeft, Delete } from '@element-plus/icons-vue';
+import request from '@/api/request';
+
+const route    = useRouter();
+const router   = useRouter();
+const routeObj = useRoute();
+
+// ============ 路由参数 ============
+const recordId = ref<string>(routeObj.query.recordId as string || '');
+const planName = ref<string>(routeObj.query.planName as string || '');
+
+// ============ 终端状态 ============
+const logs       = ref<string[]>([]);
+const runStatus  = ref<string>('PENDING');   // PENDING / RUNNING / SUCCESS / FAILED
+const isConnected = ref(false);
+const terminalRef = ref<HTMLElement | null>(null);
+
+// ============ 进度模拟 ============
+const progressPct = ref(0);
+let progressTimer: ReturnType<typeof setInterval> | null = null;
+
+// ============ 计时器 ============
+const elapsedMs  = ref(0);
+const elapsedStr = computed(() => {
+  const s = Math.floor(elapsedMs.value / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+});
+let elapsedTimer: ReturnType<typeof setInterval> | null = null;
+
+// ============ WebSocket ============
+let ws: WebSocket | null = null;
+
+const statusClass = computed(() => ({
+  'badge-pending': runStatus.value === 'PENDING',
+  'badge-running': runStatus.value === 'RUNNING',
+  'badge-success': runStatus.value === 'SUCCESS',
+  'badge-failed':  runStatus.value === 'FAILED',
+}));
+
+const statusLabel = computed(() => ({
+  PENDING: '⏳ 等待中',
+  RUNNING: '🟢 执行中',
+  SUCCESS: '✅ 成功',
+  FAILED:  '❌ 失败',
+}[runStatus.value] ?? runStatus.value));
+
+// ============ 连接 WebSocket ============
+const connectWs = () => {
+  if (!recordId.value) return;
+
+  // 拼接 WebSocket 地址（开发环境指向后端 8080）
+  const wsUrl = `ws://localhost:8080/ws/task/log/${recordId.value}`;
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    isConnected.value = true;
+    runStatus.value   = 'RUNNING';
+    startProgressSimulation();
+    startElapsedTimer();
+  };
+
+  ws.onmessage = (event) => {
+    // 检测到 SUCCESS 或 FAILED 关键词，更新状态
+    const msg: string = event.data;
+    if (msg.includes('[SUCCESS]')) {
+      runStatus.value = 'SUCCESS';
+      stopProgressSimulation(100);
+      stopElapsedTimer();
+    } else if (msg.includes('[ERROR]') && msg.includes('失败')) {
+      runStatus.value = 'FAILED';
+      stopProgressSimulation(progressPct.value);
+      stopElapsedTimer();
+    }
+    logs.value.push(msg);
+    scrollToBottom();
+  };
+
+  ws.onclose = () => {
+    isConnected.value = false;
+    // 如果还未得到最终状态，做一次状态轮询
+    if (runStatus.value === 'RUNNING' || runStatus.value === 'PENDING') {
+      pollFinalStatus();
+    }
+  };
+
+  ws.onerror = (e) => {
+    isConnected.value = false;
+    logs.value.push('[SYSTEM] WebSocket 连接错误，请检查后端服务');
+  };
+};
+
+// ============ 轮询最终状态（WS 断开后兜底）============
+const pollFinalStatus = async () => {
+  if (!recordId.value) return;
+  try {
+    const res: any = await request.get(`/api/task/record/${recordId.value}`);
+    if (res.code === 200 && res.data) {
+      runStatus.value = res.data.runStatus;
+      if (runStatus.value === 'SUCCESS') stopProgressSimulation(100);
+    }
+  } catch (_) {}
+};
+
+// ============ 进度条模拟（线性增长到 95%，SUCCESS 后跳到 100%）============
+const startProgressSimulation = () => {
+  progressPct.value = 0;
+  progressTimer = setInterval(() => {
+    if (progressPct.value < 95) {
+      progressPct.value = Math.min(95, progressPct.value + 0.5);
+    }
+  }, 200);
+};
+
+const stopProgressSimulation = (finalPct: number) => {
+  if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+  progressPct.value = finalPct;
+};
+
+// ============ 运行时长计时器 ============
+const startElapsedTimer = () => {
+  elapsedMs.value = 0;
+  elapsedTimer = setInterval(() => { elapsedMs.value += 1000; }, 1000);
+};
+
+const stopElapsedTimer = () => {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+};
+
+// ============ 自动滚动到底部 ============
+const scrollToBottom = () => {
+  nextTick(() => {
+    if (terminalRef.value) {
+      terminalRef.value.scrollTop = terminalRef.value.scrollHeight;
+    }
+  });
+};
+
+// ============ 日志着色 ============
+const getLineClass = (line: string) => ({
+  'line-success': line.includes('[SUCCESS]'),
+  'line-error':   line.includes('[ERROR]'),
+  'line-warn':    line.includes('[WARN]'),
+  'line-info':    line.includes('[INFO]'),
+  'line-step':    line.includes('[STEP'),
+  'line-sim':     line.includes('[SIM]'),
+  'line-system':  line.includes('[SYSTEM]'),
+  'line-dim':     line === '',
+});
+
+const colorize = (line: string) => {
+  // 对 ASCII 框线字符做染色（保留等宽字体美观）
+  return line
+    .replace(/(\[SUCCESS\])/g, '<span class="hl-success">$1</span>')
+    .replace(/(\[ERROR\])/g,   '<span class="hl-error">$1</span>')
+    .replace(/(\[WARN\])/g,    '<span class="hl-warn">$1</span>')
+    .replace(/(\[INFO\])/g,    '<span class="hl-info">$1</span>')
+    .replace(/(\[STEP[^\]]*\])/g, '<span class="hl-step">$1</span>')
+    .replace(/(\[SIM\])/g,     '<span class="hl-sim">$1</span>')
+    .replace(/(\[SYSTEM\])/g,  '<span class="hl-system">$1</span>');
+};
+
+// ============ 清屏 ============
+const clearLogs = () => { logs.value = []; };
+
+// ============ 返回方案库 ============
+const goBack = () => {
+  if (ws) ws.close();
+  router.push('/tasks/strategy');
+};
+
+// ============ 生命周期 ============
+onMounted(() => {
+  if (recordId.value) {
+    connectWs();
+  } else {
+    logs.value.push('[SYSTEM] 未传入 recordId，请从预案方案库点击"执行"进入本页');
+  }
+});
+
+onUnmounted(() => {
+  if (ws) ws.close();
+  stopProgressSimulation(0);
+  stopElapsedTimer();
+});
 </script>
 
 <style scoped>
-.page-container {
-  padding: 24px;
-  height: 100%;
-  min-height: calc(100vh - 120px);
-  background: radial-gradient(circle at top left, #1a1c2e 0%, #0f101a 100%);
+/* ========== 根容器 ========== */
+.terminal-root {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  height: 100vh;
+  background: #0d0d0d;
+  color: #c5f37b;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  overflow: hidden;
 }
 
-.glass-card {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 40px;
-  width: 100%;
-  max-width: 600px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  animation: fadeIn 0.8s ease-out;
-}
-
-.header {
+/* ========== 顶部状态条 ========== */
+.terminal-topbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 30px;
+  padding: 10px 20px;
+  background: #1a1a1a;
+  border-bottom: 1px solid #2a2a2a;
+  flex-shrink: 0;
+  gap: 12px;
 }
 
-.title {
-  font-size: 28px;
-  font-weight: 600;
-  color: #fff;
-  margin: 0;
-  background: linear-gradient(120deg, #409eff, #36cfc9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.status-tag {
-  background: rgba(64, 158, 255, 0.1);
-  color: #409eff;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 14px;
-  border: 1px solid rgba(64, 158, 255, 0.2);
-}
-
-.content {
-  text-align: center;
-}
-
-.placeholder-icon {
+.topbar-left {
   display: flex;
-  justify-content: center;
-  margin-bottom: 30px;
+  align-items: center;
+  gap: 12px;
 }
 
-.pulse-circle {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #409eff;
-  box-shadow: 0 0 0 rgba(64, 158, 255, 0.4);
-  animation: pulse 2s infinite;
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
-.description {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
+.topbar-icon {
+  font-size: 18px;
+}
+
+.topbar-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #c5f37b;
   letter-spacing: 1px;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+.topbar-meta {
+  font-size: 12px;
+  color: #666;
+  background: #222;
+  padding: 2px 8px;
+  border-radius: 4px;
 }
 
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 20px rgba(64, 158, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
-  }
+/* ========== 状态徽章 ========== */
+.status-badge {
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.badge-pending { color: #faad14; border-color: #faad14; background: rgba(250,173,20,0.1); }
+.badge-running { color: #52c41a; border-color: #52c41a; background: rgba(82,196,26,0.1); animation: badgePulse 1.5s infinite; }
+.badge-success { color: #c5f37b; border-color: #c5f37b; background: rgba(197,243,123,0.1); }
+.badge-failed  { color: #ff4d4f; border-color: #ff4d4f; background: rgba(255,77,79,0.1); }
+
+@keyframes badgePulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+
+/* ========== 进度条 ========== */
+.progress-bar-wrap {
+  padding: 8px 20px;
+  background: #111;
+  border-bottom: 1px solid #1e1e1e;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.progress-track {
+  flex: 1;
+  height: 4px;
+  background: #2a2a2a;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #52c41a, #c5f37b);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 8px rgba(197, 243, 123, 0.5);
+}
+
+.progress-label {
+  font-size: 11px;
+  color: #666;
+  white-space: nowrap;
+}
+
+/* ========== 终端主体 ========== */
+.terminal-body {
+  flex: 1;
+  padding: 16px 24px;
+  overflow-y: auto;
+  background: #0d0d0d;
+  line-height: 1.7;
+}
+
+/* 自定义滚动条 */
+.terminal-body::-webkit-scrollbar { width: 6px; }
+.terminal-body::-webkit-scrollbar-track  { background: #0d0d0d; }
+.terminal-body::-webkit-scrollbar-thumb  { background: #2a2a2a; border-radius: 3px; }
+
+/* ========== 日志行 ========== */
+.term-line {
+  display: block;
+  font-size: 13px;
+  min-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.term-dim   { color: #444; }
+.line-success { color: #c5f37b; }
+.line-error   { color: #ff6b6b; }
+.line-warn    { color: #ffd666; }
+.line-info    { color: #79c5f3; }
+.line-step    { color: #e8a838; }
+.line-sim     { color: #9e9e9e; }
+.line-system  { color: #b39ddb; }
+.line-dim     { color: transparent; min-height: 10px; }
+
+/* ========== 内联高亮标签 ========== */
+.term-text :deep(.hl-success) { color: #c5f37b; font-weight: 700; }
+.term-text :deep(.hl-error)   { color: #ff6b6b; font-weight: 700; }
+.term-text :deep(.hl-warn)    { color: #ffd666; font-weight: 700; }
+.term-text :deep(.hl-info)    { color: #79c5f3; }
+.term-text :deep(.hl-step)    { color: #e8a838; font-weight: 700; }
+.term-text :deep(.hl-sim)     { color: #7ab5d0; }
+.term-text :deep(.hl-system)  { color: #b39ddb; }
+
+/* ========== 光标 ========== */
+.cursor-blink {
+  color: #c5f37b;
+  animation: cursorBlink 1s infinite;
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ========== 底部信息条 ========== */
+.terminal-footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 20px;
+  background: #111;
+  border-top: 1px solid #1e1e1e;
+  font-size: 11px;
+  color: #555;
+  flex-shrink: 0;
+}
+
+.footer-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #444;
+  display: inline-block;
+}
+
+.footer-dot.dot-active {
+  background: #52c41a;
+  box-shadow: 0 0 6px #52c41a;
+}
+
+.footer-sep { color: #333; }
+.footer-msg { color: #555; }
+
+/* ========== Element Plus 按钮在暗黑背景覆盖 ========== */
+:deep(.el-button) {
+  background: #1e1e1e !important;
+  border-color: #333 !important;
+  color: #aaa !important;
+  font-size: 12px;
+}
+:deep(.el-button:hover) {
+  background: #2a2a2a !important;
+  border-color: #555 !important;
+  color: #c5f37b !important;
 }
 </style>

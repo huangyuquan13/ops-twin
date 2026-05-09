@@ -94,11 +94,18 @@
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="150" fixed="right">
-          <template #default="scope">
-            <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-            <el-button link type="success" @click="handleRun(scope.row)">执行</el-button>
-            <el-button link type="danger" @click="handleDelete(scope.row)">删除</el-button>
+        <el-table-column label="操作" width="200" fixed="right">
+          <template #default="{ row }">
+            <div class="action-buttons">
+              <div class="action-row">
+                <el-button link type="primary" :icon="Operation" @click="handleWorkflow(row)">编排</el-button>
+                <el-button link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
+              </div>
+              <div class="action-row">
+                <el-button link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
+                <el-button link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
+              </div>
+            </div>
           </template>
         </el-table-column>
 
@@ -193,15 +200,19 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus, Refresh } from '@element-plus/icons-vue';
+import { Plus, Refresh, Operation, Edit, Delete } from '@element-plus/icons-vue';
 import request from '@/api/request';
+
+const router = useRouter();
 
 // ============ 状态定义 ============
 const loading        = ref(false);
 const planList       = ref<any[]>([]);
 const total          = ref(0);
 const serviceOptions = ref<any[]>([]);
+const runLoading     = ref<Record<number, boolean>>({});  // 每行独立 loading 状态，防重复点击
 
 const queryParams = reactive({
   current:   1,
@@ -283,6 +294,14 @@ const handleEdit = (row: any) => {
   dialogVisible.value = true;
 };
 
+// 跳转到可视化编排
+const handleWorkflow = (row: any) => {
+  router.push({
+    path: '/tasks/workflow',
+    query: { id: row.id, name: row.planName }
+  });
+};
+
 const submitForm = async () => {
   if (!formRef.value) return;
   await formRef.value.validate(async (valid: boolean) => {
@@ -322,15 +341,37 @@ const toggleStatus = async (row: any) => {
   }
 };
 
-// ============ 执行预案 —— 预留入口 ============
+// ============ 执行预案 ============
 const handleRun = (row: any) => {
-  ElMessageBox.confirm(`即将触发演练预案【${row.planName}】，确认执行？`, '执行确认', {
-    confirmButtonText: '确认执行',
-    cancelButtonText:  '再想想',
-    type: 'warning',
-  }).then(() => {
-    // TODO Stage 3 后续：调用 /api/task/record/trigger 并打开 WebSocket 日志终端
-    ElMessage.info('演练引擎建设中，敬请期待！');
+  ElMessageBox.confirm(
+    `即将触发演练预案【${row.planName}】，确认执行？\n\n执行后将自动跳转至实时监控终端。`,
+    '执行确认',
+    {
+      confirmButtonText: '确认执行',
+      cancelButtonText:  '再想想',
+      type: 'warning',
+    }
+  ).then(async () => {
+    // 标记该行 loading
+    runLoading.value[row.id] = true;
+    try {
+      const res: any = await request.post(`/api/task/record/trigger/${row.id}`, null, {
+        params: { operator: 'admin' }
+      });
+      if (res.code === 200) {
+        const { recordId, planName } = res.data;
+        ElMessage.success(`演练引擎已启动，流水 ID：${recordId}，正在跳转终端...`);
+        // 跳转至实时终端页，通过 query 传参
+        router.push({
+          path: '/tasks/terminal',
+          query: { recordId: String(recordId), planName }
+        });
+      } else {
+        ElMessage.error(res.message || '触发失败');
+      }
+    } finally {
+      runLoading.value[row.id] = false;
+    }
   }).catch(() => {});
 };
 
@@ -356,6 +397,23 @@ const formatTime = (time: string) => {
 </script>
 
 <style scoped>
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.action-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.action-row .el-button {
+  margin: 0 !important;
+  padding: 4px 0;
+  flex: 1;
+  justify-content: flex-start;
+}
+
 .plan-container {
   padding: 20px;
   background: #f5f6fa;
