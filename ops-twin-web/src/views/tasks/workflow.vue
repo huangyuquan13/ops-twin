@@ -3,7 +3,8 @@
     <!-- 顶部工具条 -->
     <div class="workflow-header">
       <div class="header-left">
-        <el-button :icon="ArrowLeft" circle @click="handleBack" />
+        <el-button size="small" :icon="ArrowLeft" @click="goToIndex">总览</el-button>
+        <el-button size="small" :icon="ArrowLeft" @click="goToStrategy">方案库</el-button>
         <h3 class="title">🛠 演练编排工作站 · {{ planName || '未命名预案' }}</h3>
         <el-tag :type="isDirty ? 'warning' : 'success'" size="small" effect="dark" class="status-tag">
           {{ isDirty ? '● 未保存' : '✓ 已保存' }}
@@ -237,7 +238,11 @@ const fetchHostOptions = async () => {
   } catch { /* ignore */ }
 };
 
-onMounted(() => { loadData(); fetchHostOptions(); });
+onMounted(() => {
+  if (!planId.value) { router.replace('/tasks/index'); return; }
+  loadData();
+  fetchHostOptions();
+});
 watch(() => route.query.id, (newId) => {
   if (newId) { planId.value = newId as string; loadData(); }
 });
@@ -296,7 +301,8 @@ const handleSave = async () => {
   } catch (e) { ElMessage.error('保存失败'); }
 };
 
-const handleBack = () => router.push('/tasks/strategy');
+const goToIndex    = () => router.push('/tasks/index');
+const goToStrategy = () => router.push('/tasks/strategy');
 </script>
 
 <style scoped>

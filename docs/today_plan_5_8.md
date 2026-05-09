@@ -84,3 +84,17 @@
 - `strategy.vue` 服务下拉框显示 "订单处理引擎 (0台)" 格式
 - `workflow.vue` Target 从文本输入改为 `el-select` 下拉选择（来源：关联服务的主机列表）
 - `strategy.vue` → `workflow.vue` 路由跳转新增 `serviceId` 参数传递
+
+### Workflow 主机类型标签 + 任务总览重构
+- `workflow.vue` Target 下拉框新增 el-tag 显示主机类型（颜色对齐 service.vue）
+- `tasks/index.vue` 从占位页改为任务总览仪表盘：
+  - 顶部 KPI 统计卡片（预案总数/今日执行/成功率，调 task_record 接口计算）
+  - 预案列表 + 快捷「编排」「执行」按钮（附带 loading 防重复点击）
+  - 内嵌新建/编辑预案弹窗
+- **路由结构调整**:
+  - 新增 `tasks/index` 路由
+  - 删除 `tasks/workflow` 和 `tasks/terminal` 路由（不可从侧边栏直接访问）
+  - 侧边栏任务中心只保留「任务总览」「预案方案库」两个入口
+- **参数守卫**: workflow.vue 无 planId → `router.replace('/tasks/index')`；terminal.vue 无 recordId → 同样跳回
+- **返回按钮**: workflow 保存后 → index；terminal「返回任务总览」→ index
+- **文档同步**: implementation_plan.md 新增 Stage 3.5；03_API 新增 `/api/asset/service/{id}/hosts`

@@ -42,8 +42,9 @@ src/
       host.vue          # Server CRUD + cabinet/RackU binding (real)
       service.vue       # Logical service mapping via Vue Flow drag-drop topology (real)
     tasks/
+      index.vue         # Task hub dashboard (stats + plan list + quick actions) (real)
       strategy.vue      # Drill plan library CRUD + execute trigger (real)
-      workflow.vue      # Visual step editor (Vue Flow drag-drop nodes → steps_json) (real)
+      workflow.vue      # Visual step editor (param-gated via onMounted) (real)
       terminal.vue      # Real-time log console (WebSocket + Xterm dark theme) (real)
     system/
       user.vue          # User CRUD with avatar upload (real)
@@ -52,8 +53,7 @@ src/
 
 ## Key Pages & Interactions
 
-| Page | What it does |
-|---|---|
+| `tasks/index.vue` | Task hub dashboard: KPI stats cards (total plans/today runs/success rate) + plan list with quick [编排][执行] buttons. [设定方案] button jumps to strategy with auto-open add dialog. |
 | `assets/service.vue` | Left: service list. Right: Vue Flow canvas. Drag hosts from right sidebar onto canvas to build logical topology. Edges represent network links. |
 | `tasks/strategy.vue` | Plan CRUD. "执行" calls POST trigger → gets recordId → router.push to terminal. "编排" → workflow.vue. |
 | `tasks/workflow.vue` | Left: action palette (STOP_NODE, HEALTH_CHECK, etc.). Center: Vue Flow canvas. Drag actions → configure target/waitMs in drawer → save as steps_json. |

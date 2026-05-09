@@ -200,12 +200,13 @@
 
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh, Operation, Edit, Delete } from '@element-plus/icons-vue';
 import request from '@/api/request';
 
-const router = useRouter();
+const router   = useRouter();
+const routeObj = useRoute();
 
 // ============ 状态定义 ============
 const loading        = ref(false);
@@ -269,6 +270,10 @@ const fetchServiceOptions = async () => {
 onMounted(() => {
   fetchList();
   fetchServiceOptions();
+  // 从任务总览页的「设定方案」跳转过来时自动打开新增弹窗
+  if (routeObj.query.openAdd === '1') {
+    handleAdd();
+  }
 });
 
 // ============ 搜索与重置 ============

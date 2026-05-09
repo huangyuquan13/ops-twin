@@ -40,9 +40,9 @@ const routes: Array<RouteRecordRaw> = [
             },
             // 任务中心
             {
-                path: 'tasks/workflow',
-                component: () => import('@/views/tasks/workflow.vue'),
-                meta: { title: '演练编排' }
+                path: 'tasks/index',
+                component: () => import('@/views/tasks/index.vue'),
+                meta: { title: '任务总览' }
             },
             {
                 path: 'tasks/strategy',
@@ -50,9 +50,14 @@ const routes: Array<RouteRecordRaw> = [
                 meta: { title: '预案方案库' }
             },
             {
+                path: 'tasks/workflow',
+                component: () => import('@/views/tasks/workflow.vue'),
+                meta: { title: '演练编排', hidden: true }
+            },
+            {
                 path: 'tasks/terminal',
                 component: () => import('@/views/tasks/terminal.vue'),
-                meta: { title: '实时终端' }
+                meta: { title: '实时终端', hidden: true }
             },
             // 系统管理
             {

@@ -10,7 +10,8 @@
       <div class="topbar-right">
         <span class="topbar-meta" v-if="planName">预案：{{ planName }}</span>
         <span class="topbar-meta" v-if="recordId">流水 #{{ recordId }}</span>
-        <el-button size="small" :icon="ArrowLeft" @click="goBack">返回方案库</el-button>
+        <el-button size="small" :icon="ArrowLeft" @click="goToIndex">总览</el-button>
+        <el-button size="small" :icon="ArrowLeft" @click="goToStrategy">方案库</el-button>
         <el-button
           v-if="recordId && (runStatus === 'RUNNING' || runStatus === 'PENDING')"
           size="small"
@@ -267,8 +268,12 @@ const handleTerminate = async () => {
   }
 };
 
-// ============ 返回方案库 ============
-const goBack = () => {
+// ============ 返回导航 ============
+const goToIndex = () => {
+  if (ws) ws.close();
+  router.push('/tasks/index');
+};
+const goToStrategy = () => {
   if (ws) ws.close();
   router.push('/tasks/strategy');
 };
@@ -278,7 +283,7 @@ onMounted(() => {
   if (recordId.value) {
     connectWs();
   } else {
-    logs.value.push('[SYSTEM] 未传入 recordId，请从预案方案库点击"执行"进入本页');
+    logs.value.push('[SYSTEM] 未传入 recordId，请从预案方案库或任务总览点击"执行"进入本页');
   }
 });
 

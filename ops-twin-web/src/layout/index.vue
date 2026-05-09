@@ -4,7 +4,8 @@
     <el-aside width="240px">
       <div class="logo">OPS-TWIN</div>
               <el-menu
-        default-active="/dashboard/index"
+        :default-active="activeMenu"
+        :default-openeds="defaultOpeneds"
         background-color="#1e1e1e"
         text-color="#fff"
         active-text-color="#409eff"
@@ -28,7 +29,7 @@
         <!-- 任务中心 -->
         <el-sub-menu index="3">
           <template #title><span>任务中心</span></template>
-          <el-menu-item index="/tasks/workflow">演练工作流</el-menu-item>
+          <el-menu-item index="/tasks/index">任务总览</el-menu-item>
           <el-menu-item index="/tasks/strategy">预案方案库</el-menu-item>
           <el-menu-item index="/tasks/terminal">实时监控终端</el-menu-item>
         </el-sub-menu>
@@ -77,12 +78,31 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/store/user'
-import { onMounted } from 'vue'
+import { computed } from 'vue'
 
 const router = useRouter()
+const route = useRoute()
+
+// 动态高亮：/tasks/workflow 无独立菜单项 → 回退到 /tasks/strategy
+const activeMenu = computed(() => {
+  const p = route.path
+  if (p === '/tasks/workflow') return '/tasks/strategy'
+  return p
+})
+
+// 路径属于哪个 sub-menu 就展开哪个
+const menuIndex = computed(() => {
+  const p = route.path
+  if (p.startsWith('/dashboard')) return ['1']
+  if (p.startsWith('/assets'))   return ['2']
+  if (p.startsWith('/tasks'))    return ['3']
+  if (p.startsWith('/system'))   return ['4']
+  return ['1']
+})
+const defaultOpeneds = computed(() => menuIndex.value)
 const userStore = useUserStore()
 
 // 我们可以直接在模板中使用 userStore.avatarUrl 了，无需在每个组件里写一遍拼接逻辑
