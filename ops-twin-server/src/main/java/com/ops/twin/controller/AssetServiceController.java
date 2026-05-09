@@ -3,16 +3,18 @@ package com.ops.twin.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ops.twin.common.Result;
+import com.ops.twin.entity.AssetHost;
 import com.ops.twin.entity.AssetService;
 import com.ops.twin.entity.ServiceHostMap;
+import com.ops.twin.mapper.AssetHostMapper;
 import com.ops.twin.service.AssetServiceService;
 import com.ops.twin.service.ServiceHostMapService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/asset/service")
@@ -25,7 +27,10 @@ public class AssetServiceController {
     @Autowired
     private ServiceHostMapService serviceHostMapService;
 
-    // 分页获取服务列表
+    @Autowired
+    private AssetHostMapper assetHostMapper;
+
+    // 分页获取服务列表（含每项绑定的物理主机数量）
     @GetMapping("/list")
     public Result<Page<AssetService>> list(
             @RequestParam(defaultValue = "1") Integer current,
@@ -34,13 +39,23 @@ public class AssetServiceController {
 
         Page<AssetService> page = new Page<>(current, size);
         LambdaQueryWrapper<AssetService> wrapper = new LambdaQueryWrapper<>();
-        
+
         if (StringUtils.hasText(serviceName)) {
             wrapper.like(AssetService::getServiceName, serviceName);
         }
-        
+
         wrapper.orderByDesc(AssetService::getCreateTime);
-        return Result.success(assetServiceService.page(page, wrapper));
+        Page<AssetService> result = assetServiceService.page(page, wrapper);
+
+        // 填充每个服务的物理主机绑定数量
+        for (AssetService svc : result.getRecords()) {
+            long count = serviceHostMapService.count(
+                new LambdaQueryWrapper<ServiceHostMap>().eq(ServiceHostMap::getServiceId, svc.getId())
+            );
+            svc.setHostCount((int) count);
+        }
+
+        return Result.success(result);
     }
 
     // 保存或更新服务
@@ -103,6 +118,22 @@ public class AssetServiceController {
         }
 
         return Result.success(true);
+    }
+
+    // 查询某个逻辑服务绑定的所有物理主机
+    @GetMapping("/{id}/hosts")
+    public Result<List<AssetHost>> getServiceHosts(@PathVariable Long id) {
+        // 查映射关系
+        List<ServiceHostMap> maps = serviceHostMapService.list(
+            new LambdaQueryWrapper<ServiceHostMap>().eq(ServiceHostMap::getServiceId, id)
+        );
+        if (maps.isEmpty()) {
+            return Result.success(List.of());
+        }
+        // 查物理主机
+        List<Long> hostIds = maps.stream().map(ServiceHostMap::getHostId).collect(Collectors.toList());
+        List<AssetHost> hosts = assetHostMapper.selectBatchIds(hostIds);
+        return Result.success(hosts);
     }
 
     // 删除服务

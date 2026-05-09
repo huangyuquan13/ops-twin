@@ -3,8 +3,13 @@ package com.ops.twin.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ops.twin.entity.AssetService;
+import com.ops.twin.entity.ServiceHostMap;
 import com.ops.twin.entity.TaskPlan;
 import com.ops.twin.entity.TaskRecord;
+import com.ops.twin.mapper.AssetServiceMapper;
+import com.ops.twin.mapper.ServiceHostMapMapper;
 import com.ops.twin.mapper.TaskRecordMapper;
 import com.ops.twin.websocket.TaskLogWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +35,12 @@ public class TaskExecutionEngine {
     /** 直接依赖 Mapper 而非 Service，打破循环依赖 */
     @Autowired
     private TaskRecordMapper taskRecordMapper;
+
+    @Autowired
+    private AssetServiceMapper assetServiceMapper;
+
+    @Autowired
+    private ServiceHostMapMapper serviceHostMapMapper;
 
     private static final DateTimeFormatter LOG_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
@@ -57,6 +68,26 @@ public class TaskExecutionEngine {
             pushLog(rid, String.format("[INFO] 任务流水 ID: %d", recordId));
             pushLog(rid, "[INFO] ──────────────────────────────────────────────");
             Thread.sleep(600);
+
+            // 校验关联的逻辑服务是否存在
+            if (plan.getServiceId() != null) {
+                AssetService svc = assetServiceMapper.selectById(plan.getServiceId());
+                if (svc == null) {
+                    pushLog(rid, "[ERROR] 关联的逻辑服务（ID=" + plan.getServiceId() + "）不存在，请检查服务映射配置");
+                    updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "关联服务不存在");
+                    return;
+                }
+                long hostCount = serviceHostMapMapper.selectCount(
+                    new LambdaQueryWrapper<ServiceHostMap>().eq(ServiceHostMap::getServiceId, plan.getServiceId())
+                );
+                if (hostCount == 0) {
+                    pushLog(rid, "[ERROR] 关联服务【" + svc.getServiceName() + "】当前未绑定任何物理主机，无法执行演练");
+                    updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "关联服务无可用主机");
+                    return;
+                } else {
+                    pushLog(rid, "[INFO] 关联服务【" + svc.getServiceName() + "】已绑定 " + hostCount + " 台物理主机");
+                }
+            }
 
             String stepsJson = plan.getStepsJson();
             if (stepsJson == null || stepsJson.isBlank()) {
@@ -94,6 +125,20 @@ public class TaskExecutionEngine {
                 pushLog(rid, "[ERROR] 预案未包含任何可执行步骤，请先在编排页面中设计演练流程");
                 updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "无可执行步骤");
                 return;
+            }
+
+            // 批量校验：需要目标主机的步骤，target 不能为空
+            for (int i = 0; i < steps.size(); i++) {
+                JSONObject step = steps.getJSONObject(i);
+                if (step == null) continue;
+                if (step.containsKey("isLayoutMeta") && step.getBooleanValue("isLayoutMeta")) continue;
+                String action = step.getString("action");
+                String target = step.getString("target");
+                if (requiresTarget(action) && (target == null || target.isBlank())) {
+                    pushLog(rid, "[ERROR] 步骤【" + action + "】缺少目标对象（Target），请在编排页面中为每个操作节点指定目标主机");
+                    updateStatus(recordId, "FAILED", System.currentTimeMillis() - startMs, "步骤缺少目标主机");
+                    return;
+                }
             }
 
             int currentExecIndex = 1;
@@ -146,6 +191,15 @@ public class TaskExecutionEngine {
      */
     public void cancel(Long recordId) {
         cancelFlags.put(recordId, true);
+    }
+
+    /** 判断动作类型是否需要指定目标主机 */
+    private boolean requiresTarget(String action) {
+        if (action == null) return true;
+        return switch (action) {
+            case "WAIT", "NOTIFY" -> false;
+            default -> true;
+        };
     }
 
     private void runStep(String rid, JSONObject step, int current, int total) throws InterruptedException {

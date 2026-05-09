@@ -70,7 +70,24 @@
         <el-alert :title="getActionMeta(selectedNode.data.action).label" type="info" :closable="false" style="margin-bottom: 20px" />
         <el-form label-position="top">
           <el-form-item label="目标对象 (Target)">
-            <el-input v-model="selectedNode.data.target" @input="onConfigChange" />
+            <el-select
+              v-model="selectedNode.data.target"
+              placeholder="选择目标主机"
+              filterable
+              clearable
+              @change="onConfigChange"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="h in hostOptions"
+                :key="h.hostname"
+                :label="`${h.hostname} (${h.ipAddr})`"
+                :value="h.hostname"
+              />
+            </el-select>
+            <span v-if="hostOptions.length === 0" style="color: #909399; font-size: 12px;">
+              暂无可用主机，请先在"逻辑服务映射"中为此服务绑定物理主机
+            </span>
           </el-form-item>
           <el-form-item label="模拟耗时 (毫秒)">
             <el-input-number v-model="selectedNode.data.waitMs" :step="500" @change="onConfigChange" style="width: 100%"/>
@@ -108,9 +125,11 @@ const canvasRef = ref<HTMLElement>();
 const { project } = useVueFlow();
 
 // ============ 状态 ============
-const planId   = ref(route.query.id as string);
-const planName = ref((route.query.name as string) || '');
-const nodes    = ref<any[]>([]);
+const planId    = ref(route.query.id as string);
+const planName  = ref((route.query.name as string) || '');
+const serviceId = ref((route.query.serviceId as string) || '');
+const nodes     = ref<any[]>([]);
+const hostOptions = ref<{ hostname: string; ipAddr: string }[]>([]);
 const edges    = ref<any[]>([]);
 const drawerVisible = ref(false);
 const selectedNode  = ref<any>(null);
@@ -192,9 +211,22 @@ const loadData = async () => {
   } catch (e) { isLoading = false; }
 };
 
-onMounted(loadData);
+const fetchHostOptions = async () => {
+  if (!serviceId.value) return;
+  try {
+    const res: any = await request.get(`/api/asset/service/${serviceId.value}/hosts`);
+    if (res.code === 200 && res.data) {
+      hostOptions.value = res.data;
+    }
+  } catch { /* ignore */ }
+};
+
+onMounted(() => { loadData(); fetchHostOptions(); });
 watch(() => route.query.id, (newId) => {
   if (newId) { planId.value = newId as string; loadData(); }
+});
+watch(() => route.query.serviceId, (newVal) => {
+  if (newVal) { serviceId.value = newVal as string; fetchHostOptions(); }
 });
 
 const onDragStart = (e: DragEvent, type: string) => {

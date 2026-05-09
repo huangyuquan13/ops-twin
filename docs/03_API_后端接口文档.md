@@ -67,6 +67,20 @@
 **接口路径**: `WS /ws/task/log/{recordId}`
 - 说明：基于 Spring WebSocket 的文本协议通道。前端 terminal.vue 进入后自动建立连接，实时接收带有语义标签（如 [INFO], [SUCCESS]）的日志行。
 
+### 3.5 终止正在执行的任务 ✔已实现
+**接口路径**: `POST /api/task/record/{id}/terminate`
+- 说明：向引擎发送取消信号，引擎在下一步执行前检测到标志后立即中止，推送终止通知到 WebSocket，数据库状态更新为 CANCELLED。
+- 返回：`{ code: 200, data: "已发送终止信号" }` 或 `{ code: 500, message: "任务不存在或已结束，无法终止" }`
+
+### 3.6 逻辑服务列表（含主机数）✔已实现
+**接口路径**: `GET /api/asset/service/list`
+- 说明：分页查询逻辑服务，每条记录附加 `hostCount` 字段表示已绑定的物理主机数量，供前端下拉框展示。
+
+### 3.7 查询服务绑定的物理主机列表 ✔已实现
+**接口路径**: `GET /api/asset/service/{id}/hosts`
+- 说明：根据服务 ID 查询该逻辑服务下绑定的所有物理主机，供演练工作流的目标下拉框使用。
+- 返回：`List<AssetHost>`
+
 ## 4. 系统管理 (System Management)
 ### 4.1 登录获取令牌
 **接口路径**: `POST /api/auth/login`

@@ -23,7 +23,7 @@
             <el-option
               v-for="s in serviceOptions"
               :key="s.id"
-              :label="s.serviceName"
+              :label="`${s.serviceName} (${s.hostCount ?? 0}台)`"
               :value="s.id"
             />
           </el-select>
@@ -140,7 +140,7 @@
                 <el-option
                   v-for="s in serviceOptions"
                   :key="s.id"
-                  :label="s.serviceName"
+                  :label="`${s.serviceName} (${s.hostCount ?? 0}台)`"
                   :value="s.id"
                 />
               </el-select>
@@ -298,7 +298,7 @@ const handleEdit = (row: any) => {
 const handleWorkflow = (row: any) => {
   router.push({
     path: '/tasks/workflow',
-    query: { id: row.id, name: row.planName }
+    query: { id: row.id, name: row.planName, serviceId: row.serviceId }
   });
 };
 

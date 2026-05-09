@@ -14,6 +14,7 @@ Vue 3 frontend for the Ops-Twin digital twin platform.
 | Router | Vue Router 4 (HTML5 history mode) |
 | 3D | Three.js 0.184 + Tween.js 0.25 |
 | Charts | ECharts 6.0 |
+| Flow | @vue-flow/core (topology editing in service + workflow pages) |
 | HTTP | Axios 1.15 |
 
 ## Commands
@@ -38,33 +39,34 @@ src/
       index.vue         # 3D digital twin (Three.js, L1/L2/L3 drill-down)
       analysis.vue      # ECharts analytics dashboard
     assets/
-      host.vue          # Server CRUD (real implementation)
-      service.vue       # Service mapping (placeholder)
+      host.vue          # Server CRUD + cabinet/RackU binding (real)
+      service.vue       # Logical service mapping via Vue Flow drag-drop topology (real)
     tasks/
-      workflow/strategy/terminal  # All placeholders
+      strategy.vue      # Drill plan library CRUD + execute trigger (real)
+      workflow.vue      # Visual step editor (Vue Flow drag-drop nodes → steps_json) (real)
+      terminal.vue      # Real-time log console (WebSocket + Xterm dark theme) (real)
     system/
-      user.vue          # User CRUD with avatar upload (real implementation)
+      user.vue          # User CRUD with avatar upload (real)
       role/audit        # Placeholders
 ```
+
+## Key Pages & Interactions
+
+| Page | What it does |
+|---|---|
+| `assets/service.vue` | Left: service list. Right: Vue Flow canvas. Drag hosts from right sidebar onto canvas to build logical topology. Edges represent network links. |
+| `tasks/strategy.vue` | Plan CRUD. "执行" calls POST trigger → gets recordId → router.push to terminal. "编排" → workflow.vue. |
+| `tasks/workflow.vue` | Left: action palette (STOP_NODE, HEALTH_CHECK, etc.). Center: Vue Flow canvas. Drag actions → configure target/waitMs in drawer → save as steps_json. |
+| `tasks/terminal.vue` | Reads recordId from query → WebSocket ws://localhost:8080/ws/task/log/{id} → real-time colored log stream. Terminate button (POST /api/task/record/{id}/terminate). |
 
 ## Conventions
 
 - All `.vue` files use `<script setup lang="ts">` exclusively
 - All UI text is in Chinese
-- Dark theme with sci-fi aesthetic (#020508 base, #00e5ff accent)
+- Dark theme with sci-fi aesthetic for dashboard/terminal; light theme for CRUD pages
 - No ESLint/Prettier configured — rely on TypeScript strict flags
 - API calls go through the shared Axios instance in `api/request.ts`
-- CRUD pages follow a consistent pattern: search card + el-table + el-pagination + dialog form
-
-## Implemented Pages
-
-4 of 10 routes have real implementations:
-1. `dashboard/index.vue` — 3D twin (555 lines, Three.js scene with L1/L2/L3 drill-down)
-2. `dashboard/analysis.vue` — ECharts charts (KPI cards + line/donut/bar)
-3. `assets/host.vue` — Server asset CRUD
-4. `system/user.vue` — User management CRUD
-
-The other 6 routes are placeholder "under construction" pages.
+- Vue Flow pages must import CSS: `@vue-flow/core/dist/style.css` + theme/controls/minimap CSS
 
 ## Backend API Contract
 
