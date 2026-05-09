@@ -25,11 +25,9 @@
             v-for="item in availableActions"
             :key="item.type"
             class="dnd-node"
-            :class="'node-border-' + item.color"
             draggable="true"
             @dragstart="onDragStart($event, item.type)"
           >
-            <!-- 图标加上颜色，与右侧对应 -->
             <el-icon :class="'icon-' + item.color"><component :is="item.icon" /></el-icon>
             <div class="dnd-node-info">
               <div class="dnd-node-label">{{ item.label }}</div>
@@ -37,13 +35,12 @@
             </div>
           </div>
         </div>
-        <!-- 底部提示，确保文字清晰不被遮挡 -->
         <div class="panel-tip">
           <span class="tip-content">💡 节点按顺序(从上到下)执行</span>
         </div>
       </div>
 
-      <!-- 右侧画布 -->
+      <!-- 右侧画布：必须 relative -->
       <div class="canvas-area" ref="canvasRef" @drop="onDrop" @dragover.prevent>
         <VueFlow
           v-model="nodes"
@@ -56,8 +53,8 @@
           @node-drag-stop="markDirty"
         >
           <Background pattern-color="#2a2a3e" :gap="20" />
-          <Controls />
-          <MiniMap node-color="#409eff" />
+          <Controls position="bottom-right" />
+          <MiniMap position="bottom-left" node-color="#409eff" />
         </VueFlow>
 
         <div v-if="nodes.length === 0" class="empty-hint">
@@ -67,37 +64,16 @@
       </div>
     </div>
 
-    <!-- 节点配置侧边抽屉 -->
-    <el-drawer
-      v-model="drawerVisible"
-      title="⚙️ 节点参数配置"
-      size="340px"
-      :destroy-on-close="false"
-    >
+    <!-- 抽屉略 ... -->
+    <el-drawer v-model="drawerVisible" title="⚙️ 节点参数配置" size="340px">
       <div v-if="selectedNode" class="config-form">
-        <el-alert
-          :title="getActionMeta(selectedNode.data.action).label"
-          :description="getActionMeta(selectedNode.data.action).desc"
-          type="info"
-          show-icon
-          :closable="false"
-          style="margin-bottom: 20px"
-        />
+        <el-alert :title="getActionMeta(selectedNode.data.action).label" type="info" :closable="false" style="margin-bottom: 20px" />
         <el-form label-position="top">
           <el-form-item label="目标对象 (Target)">
-            <el-input
-              v-model="selectedNode.data.target"
-              placeholder="如: Pay-DB-Master"
-              @input="onConfigChange"
-            />
+            <el-input v-model="selectedNode.data.target" @input="onConfigChange" />
           </el-form-item>
           <el-form-item label="模拟耗时 (毫秒)">
-            <el-input-number
-              v-model="selectedNode.data.waitMs"
-              :step="500" :min="100" :max="10000"
-              style="width: 100%"
-              @change="onConfigChange"
-            />
+            <el-input-number v-model="selectedNode.data.waitMs" :step="500" @change="onConfigChange" style="width: 100%"/>
           </el-form-item>
         </el-form>
         <div class="drawer-footer">
@@ -110,19 +86,26 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue';
+import { ref, onMounted, nextTick, watch } from 'vue';
 import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Check, VideoPlay, Refresh, Monitor, Bell, Timer, Switch } from '@element-plus/icons-vue';
-import { VueFlow } from '@vue-flow/core';
+import { VueFlow, useVueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
 import request from '@/api/request';
 
+// 重要：必须引入 CSS 否则连线和小窗口会乱掉
+import '@vue-flow/core/dist/style.css';
+import '@vue-flow/core/dist/theme-default.css';
+import '@vue-flow/controls/dist/style.css';
+import '@vue-flow/minimap/dist/style.css';
+
 const route = useRoute();
 const router = useRouter();
 const canvasRef = ref<HTMLElement>();
+const { project } = useVueFlow();
 
 // ============ 状态 ============
 const planId   = ref(route.query.id as string);
@@ -143,17 +126,16 @@ const availableActions = [
   { type: 'RESTART_NODE',  label: '重启节点',  desc: '重启指定的服务器',     icon: Refresh,   color: 'warning' },
 ];
 
-const getActionMeta = (type: string) =>
-  availableActions.find(a => a.type === type) ?? { label: type, desc: '', color: 'info' };
+const getActionMeta = (type: string) => availableActions.find(a => a.type === type) ?? { label: type, desc: '', color: 'info' };
 
 const getNodeStyle = (type: string) => {
   const c = {
-    STOP_NODE:     { border: '#f56c6c', glow: 'rgba(245,108,108,0.3)' },
+    STOP_NODE: { border: '#f56c6c', glow: 'rgba(245,108,108,0.3)' },
     PROMOTE_SLAVE: { border: '#e6a23c', glow: 'rgba(230,162,60,0.3)' },
-    HEALTH_CHECK:  { border: '#67c23a', glow: 'rgba(103,194,58,0.3)' },
-    NOTIFY:        { border: '#409eff', glow: 'rgba(64,158,255,0.3)' },
-    WAIT:          { border: '#909399', glow: 'rgba(144,147,153,0.3)' },
-    RESTART_NODE:  { border: '#e6a23c', glow: 'rgba(230,162,60,0.3)' },
+    HEALTH_CHECK: { border: '#67c23a', glow: 'rgba(103,194,58,0.3)' },
+    NOTIFY: { border: '#409eff', glow: 'rgba(64,158,255,0.3)' },
+    WAIT: { border: '#909399', glow: 'rgba(144,147,153,0.3)' },
+    RESTART_NODE: { border: '#e6a23c', glow: 'rgba(230,162,60,0.3)' },
   }[type] || { border: '#555', glow: 'transparent' };
   return {
     border: `2px solid ${c.border}`, borderRadius: '10px',
@@ -179,7 +161,7 @@ onBeforeRouteLeave(async (to, from, next) => {
   } else next();
 });
 
-onMounted(async () => {
+const loadData = async () => {
   if (!planId.value) return;
   isLoading = true;
   try {
@@ -187,7 +169,6 @@ onMounted(async () => {
     if (res.code === 200 && res.data && res.data.stepsJson) {
       planName.value = res.data.planName;
       const raw = JSON.parse(res.data.stepsJson);
-      
       const layout = raw.layout || (Array.isArray(raw) ? null : raw.layout);
       const steps = Array.isArray(raw) ? raw : (raw.steps || []);
 
@@ -208,17 +189,30 @@ onMounted(async () => {
       await nextTick();
       setTimeout(() => { isDirty.value = false; isLoading = false; }, 500);
     }
-  } catch (e) { ElMessage.error('加载失败'); isLoading = false; }
+  } catch (e) { isLoading = false; }
+};
+
+onMounted(loadData);
+watch(() => route.query.id, (newId) => {
+  if (newId) { planId.value = newId as string; loadData(); }
 });
 
-const onDragStart = (e: DragEvent, type: string) => e.dataTransfer?.setData('application/vueflow', type);
+const onDragStart = (e: DragEvent, type: string) => {
+  if (e.dataTransfer) {
+    e.dataTransfer.setData('application/vueflow', type);
+    e.dataTransfer.effectAllowed = 'move';
+  }
+};
+
 const onDrop = (e: DragEvent) => {
   const type = e.dataTransfer?.getData('application/vueflow');
   if (!type || !canvasRef.value) return;
   const rect = canvasRef.value.getBoundingClientRect();
+  const position = project({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  position.x -= 85; position.y -= 25;
+
   nodes.value.push({
-    id: `node_${Date.now()}`, type: 'default',
-    position: { x: e.clientX - rect.left - 85, y: e.clientY - rect.top - 40 },
+    id: `node_${Date.now()}`, type: 'default', position,
     label: buildLabel(type, ''), data: { action: type, target: '', waitMs: 1500 },
     style: getNodeStyle(type),
   });
@@ -242,79 +236,34 @@ const clearAll = () => { nodes.value = []; edges.value = []; markDirty(); };
 
 const handleSave = async () => {
   if (nodes.value.length === 0) return ElMessage.warning('画布为空');
-  const sorted = [...nodes.value]
-    .filter(n => n && n.position && typeof n.position.y !== 'undefined')
-    .sort((a, b) => {
-      if (Math.abs(a.position.y - b.position.y) > 30) return a.position.y - b.position.y;
-      return a.position.x - b.position.x;
-    });
-
+  const sorted = [...nodes.value].filter(n => n?.position).sort((a, b) => (a.position.y - b.position.y));
   const steps = sorted.map((n, i) => ({
     step: i + 1, action: n.data?.action || '', target: n.data?.target || '',
     waitMs: n.data?.waitMs || 1500, x: n.position?.x ?? 0, y: n.position?.y ?? 0
   }));
-
-  const persistenceData = {
-    steps: steps,
-    layout: {
-      nodes: nodes.value.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
-      edges: edges.value
-    }
-  };
-
+  const persistenceData = { steps, layout: { nodes: nodes.value.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })), edges: edges.value } };
   try {
     const res: any = await request.post('/api/task/plan/save', { id: Number(planId.value), stepsJson: JSON.stringify(persistenceData) });
-    if (res.code === 200) {
-      ElMessage.success('✅ 编排保存成功！');
-      isDirty.value = false;
-      setTimeout(() => router.push('/tasks/strategy'), 800);
-    }
-  } catch (e) { ElMessage.error('保存出错'); }
+    if (res.code === 200) { ElMessage.success('✅ 编排保存成功！'); isDirty.value = false; setTimeout(() => router.push('/tasks/strategy'), 800); }
+  } catch (e) { ElMessage.error('保存失败'); }
 };
 
 const handleBack = () => router.push('/tasks/strategy');
 </script>
 
 <style scoped>
-.workflow-container { display: flex; flex-direction: column; height: calc(100vh - 84px); background: #0d0e1a; border-radius: 12px; overflow: hidden; }
-.workflow-header { height: 58px; background: #111228; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid rgba(64,158,255,0.2); flex-shrink: 0; }
+.workflow-container { display: flex; flex-direction: column; height: calc(100vh - 84px); background: #0d0e1a; border-radius: 12px; overflow: hidden; position: relative; }
+.workflow-header { height: 58px; background: #111228; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid rgba(64,158,255,0.2); z-index: 10; }
 .header-left { display: flex; align-items: center; gap: 12px; }
-.status-tag { margin-left: 8px; font-weight: bold; border: none; }
 .title { color: #e8eaf6; font-size: 15px; margin: 0; }
 .workflow-content { flex: 1; display: flex; overflow: hidden; }
-
-/* 左侧面板优化 */
-.node-panel { width: 220px; background: #0f1022; border-right: 1px solid rgba(255,255,255,0.08); padding: 16px 14px; flex-shrink: 0; display: flex; flex-direction: column; }
-.panel-title { color: #7b7faa; font-size: 11px; text-transform: uppercase; font-weight: 600; }
-.panel-subtitle { color: #4a4d6e; font-size: 11px; }
+.node-panel { width: 220px; background: #0f1022; border-right: 1px solid rgba(255,255,255,0.08); padding: 16px 14px; display: flex; flex-direction: column; user-select: none; }
 .node-list { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
-
-.dnd-node { 
-  padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); 
-  border: 1px solid rgba(255,255,255,0.06); color: #ccd0f0; cursor: grab; 
-  display: flex; align-items: center; gap: 12px; transition: all 0.2s; 
-}
-.dnd-node:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(64, 158, 255, 0.4); transform: translateX(4px); }
-
-/* 图标颜色区分 */
-.icon-danger { color: #f56c6c; }
-.icon-warning { color: #e6a23c; }
-.icon-success { color: #67c23a; }
-.icon-primary { color: #409eff; }
-.icon-info { color: #909399; }
-
-.dnd-node-label { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
-.dnd-node-desc { font-size: 10px; color: #5a5e88; }
-
-/* 修复底部提示文字 */
-.panel-tip { margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); }
-.tip-content { color: #409eff; font-size: 12px; font-weight: 500; text-shadow: 0 0 8px rgba(64,158,255,0.2); }
-
-.canvas-area { flex: 1; position: relative; background: #0b0c18; }
-.empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #3c3f5e; pointer-events: none; }
-
-:deep(.vue-flow__node-default) { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6); white-space: pre-line; line-height: 1.4; }
+.dnd-node { padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); color: #ccd0f0; cursor: grab; display: flex; align-items: center; gap: 12px; }
+.icon-danger { color: #f56c6c; } .icon-warning { color: #e6a23c; } .icon-success { color: #67c23a; } .icon-primary { color: #409eff; } .icon-info { color: #909399; }
+.panel-tip { margin-top: auto; padding-top: 20px; }
+.tip-content { color: #409eff; font-size: 12px; }
+.canvas-area { flex: 1; position: relative; background: #0b0c18; overflow: hidden; }
 :deep(.vue-flow__edge-path) { stroke-dasharray: 5; animation: dash 10s linear infinite; stroke: #409eff; stroke-width: 2; }
 @keyframes dash { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
-.drawer-footer { margin-top: 30px; display: flex; justify-content: space-between; }
 </style>
