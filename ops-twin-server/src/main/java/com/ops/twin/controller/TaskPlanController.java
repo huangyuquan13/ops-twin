@@ -75,9 +75,12 @@ public class TaskPlanController {
      */
     @DeleteMapping("/delete/{id}")
     public Result<Boolean> delete(@PathVariable Long id) {
-        return taskPlanService.removeById(id)
-                ? Result.success(true)
-                : Result.error("删除失败，预案不存在");
+        return Result.success(taskPlanService.removeById(id));
+    }
+
+    @GetMapping("/{id}")
+    public Result<TaskPlan> getById(@PathVariable Long id) {
+        return Result.success(taskPlanService.getById(id));
     }
 
     /**

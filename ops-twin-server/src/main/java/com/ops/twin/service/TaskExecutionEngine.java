@@ -58,10 +58,43 @@ public class TaskExecutionEngine {
             if (stepsJson == null || stepsJson.isBlank()) {
                 runDefaultDemo(rid);
             } else {
-                JSONArray steps = JSON.parseArray(stepsJson);
+                // 1. 全格式兼容解析逻辑
+                Object raw = JSON.parse(stepsJson);
+                JSONArray steps;
+                if (raw instanceof JSONObject) {
+                    // 如果是对象格式 {"steps": [...], "layout": ...}
+                    steps = ((JSONObject) raw).getJSONArray("steps");
+                } else if (raw instanceof JSONArray) {
+                    // 如果是数组格式 [...]
+                    steps = (JSONArray) raw;
+                } else {
+                    log.error("[引擎] 无法识别的 stepsJson 格式");
+                    return;
+                }
+
+                if (steps == null) {
+                    runDefaultDemo(rid);
+                    return;
+                }
+
+                int realStepCount = 0;
                 for (int i = 0; i < steps.size(); i++) {
                     JSONObject step = steps.getJSONObject(i);
-                    runStep(rid, step, i + 1, steps.size());
+                    if (step != null && !step.containsKey("isLayoutMeta")) {
+                        realStepCount++;
+                    }
+                }
+
+                int currentExecIndex = 1;
+                for (int i = 0; i < steps.size(); i++) {
+                    JSONObject step = steps.getJSONObject(i);
+                    if (step == null) continue;
+                    
+                    // 跳过布局元数据
+                    if (step.containsKey("isLayoutMeta") && step.getBooleanValue("isLayoutMeta")) {
+                        continue;
+                    }
+                    runStep(rid, step, currentExecIndex++, realStepCount);
                 }
             }
 

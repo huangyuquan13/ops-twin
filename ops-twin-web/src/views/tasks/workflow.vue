@@ -3,11 +3,14 @@
     <!-- 顶部工具条 -->
     <div class="workflow-header">
       <div class="header-left">
-        <el-button :icon="ArrowLeft" circle @click="goBack" />
-        <h3 class="title">演练编排工作站：{{ planName || '未命名预案' }}</h3>
+        <el-button :icon="ArrowLeft" circle @click="handleBack" />
+        <h3 class="title">🛠 演练编排工作站 · {{ planName || '未命名预案' }}</h3>
+        <el-tag :type="isDirty ? 'warning' : 'success'" size="small" effect="dark" class="status-tag">
+          {{ isDirty ? '● 未保存' : '✓ 已保存' }}
+        </el-tag>
       </div>
       <div class="header-right">
-        <el-button type="info" :icon="QuestionFilled" plain>帮助</el-button>
+        <el-button plain @click="clearAll">清空画布</el-button>
         <el-button type="primary" :icon="Check" @click="handleSave">保存编排</el-button>
       </div>
     </div>
@@ -15,63 +18,91 @@
     <div class="workflow-content">
       <!-- 左侧动作面板 -->
       <div class="node-panel">
-        <div class="panel-title">动作库</div>
+        <div class="panel-title">📦 动作库</div>
+        <div class="panel-subtitle">将动作拖至右侧画布</div>
         <div class="node-list">
           <div
             v-for="item in availableActions"
             :key="item.type"
             class="dnd-node"
-            :class="'node-' + item.color"
+            :class="'node-border-' + item.color"
             draggable="true"
             @dragstart="onDragStart($event, item.type)"
           >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ item.label }}</span>
+            <!-- 图标加上颜色，与右侧对应 -->
+            <el-icon :class="'icon-' + item.color"><component :is="item.icon" /></el-icon>
+            <div class="dnd-node-info">
+              <div class="dnd-node-label">{{ item.label }}</div>
+              <div class="dnd-node-desc">{{ item.desc }}</div>
+            </div>
           </div>
         </div>
-        <div class="panel-tip">💡 拖拽动作到右侧画布开始编排</div>
+        <!-- 底部提示，确保文字清晰不被遮挡 -->
+        <div class="panel-tip">
+          <span class="tip-content">💡 节点按顺序(从上到下)执行</span>
+        </div>
       </div>
 
       <!-- 右侧画布 -->
-      <div class="canvas-area" @drop="onDrop" @dragover.prevent>
+      <div class="canvas-area" ref="canvasRef" @drop="onDrop" @dragover.prevent>
         <VueFlow
           v-model="nodes"
           v-model:edges="edges"
-          :class="{ 'dark-theme': true }"
-          :default-viewport="{ x: 0, y: 0, zoom: 1 }"
+          :default-viewport="{ x: 50, y: 80, zoom: 0.85 }"
+          :fit-view-on-init="true"
           @connect="onConnect"
+          @node-click="onNodeClick"
+          @edge-double-click="onEdgeDoubleClick"
+          @node-drag-stop="markDirty"
         >
-          <!-- 背景与网关 -->
-          <Background pattern-color="#333" :gap="20" />
+          <Background pattern-color="#2a2a3e" :gap="20" />
           <Controls />
-          <MiniMap />
+          <MiniMap node-color="#409eff" />
         </VueFlow>
+
+        <div v-if="nodes.length === 0" class="empty-hint">
+          <div class="empty-icon">⬅</div>
+          <div>从左侧拖入动作节点，开始设计你的演练流程</div>
+        </div>
       </div>
     </div>
 
     <!-- 节点配置侧边抽屉 -->
     <el-drawer
       v-model="drawerVisible"
-      title="节点参数配置"
-      size="320px"
-      destroy-on-close
+      title="⚙️ 节点参数配置"
+      size="340px"
+      :destroy-on-close="false"
     >
       <div v-if="selectedNode" class="config-form">
+        <el-alert
+          :title="getActionMeta(selectedNode.data.action).label"
+          :description="getActionMeta(selectedNode.data.action).desc"
+          type="info"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 20px"
+        />
         <el-form label-position="top">
-          <el-form-item label="动作类型">
-            <el-tag :type="getActionTag(selectedNode.data.action).color">
-              {{ getActionTag(selectedNode.data.action).label }}
-            </el-tag>
-          </el-form-item>
           <el-form-item label="目标对象 (Target)">
-            <el-input v-model="selectedNode.data.target" placeholder="输入主机名或资源标识" />
+            <el-input
+              v-model="selectedNode.data.target"
+              placeholder="如: Pay-DB-Master"
+              @input="onConfigChange"
+            />
           </el-form-item>
-          <el-form-item label="模拟耗时 (ms)">
-            <el-input-number v-model="selectedNode.data.waitMs" :step="500" :min="0" style="width: 100%" />
+          <el-form-item label="模拟耗时 (毫秒)">
+            <el-input-number
+              v-model="selectedNode.data.waitMs"
+              :step="500" :min="100" :max="10000"
+              style="width: 100%"
+              @change="onConfigChange"
+            />
           </el-form-item>
         </el-form>
         <div class="drawer-footer">
-          <el-button type="danger" plain @click="removeNode(selectedNode.id)">删除节点</el-button>
+          <el-button type="danger" plain @click="removeNode(selectedNode.id)">🗑 删除节点</el-button>
+          <el-button type="primary" @click="drawerVisible = false">✓ 确认</el-button>
         </div>
       </div>
     </el-drawer>
@@ -79,271 +110,211 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
-import { ArrowLeft, Check, QuestionFilled, VideoPlay, Refresh, Monitor, Bell, Timer } from '@element-plus/icons-vue';
-import { VueFlow, useVueFlow } from '@vue-flow/core';
+import { ref, onMounted, nextTick } from 'vue';
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import { ArrowLeft, Check, VideoPlay, Refresh, Monitor, Bell, Timer, Switch } from '@element-plus/icons-vue';
+import { VueFlow } from '@vue-flow/core';
 import { Background } from '@vue-flow/background';
 import { Controls } from '@vue-flow/controls';
 import { MiniMap } from '@vue-flow/minimap';
-
-import '@vue-flow/core/dist/style.css';
-import '@vue-flow/core/dist/theme-default.css';
-import '@vue-flow/controls/dist/style.css';
-import '@vue-flow/minimap/dist/style.css';
 import request from '@/api/request';
 
 const route = useRoute();
 const router = useRouter();
-const { addEdges, addNodes, project } = useVueFlow();
+const canvasRef = ref<HTMLElement>();
 
-// ============ 状态定义 ============
+// ============ 状态 ============
 const planId   = ref(route.query.id as string);
-const planName = ref(route.query.name as string);
+const planName = ref((route.query.name as string) || '');
 const nodes    = ref<any[]>([]);
 const edges    = ref<any[]>([]);
-
 const drawerVisible = ref(false);
 const selectedNode  = ref<any>(null);
+const isDirty = ref(false); 
+let isLoading = false; 
 
-// 可用的动作类型
 const availableActions = [
-  { type: 'STOP_NODE',     label: '停止节点', icon: VideoPlay, color: 'danger' },
-  { type: 'PROMOTE_SLAVE', label: '提升从库', icon: Refresh,   color: 'warning' },
-  { type: 'HEALTH_CHECK',  label: '健康检查', icon: Monitor,   color: 'success' },
-  { type: 'NOTIFY',        label: '发送通知', icon: Bell,      color: 'primary' },
-  { type: 'WAIT',          label: '等待监测', icon: Timer,     color: 'info' },
+  { type: 'STOP_NODE',     label: '停止节点',  desc: '停止指定的服务器节点', icon: VideoPlay, color: 'danger' },
+  { type: 'PROMOTE_SLAVE', label: '提升从库',  desc: '将从库提升为新主库',   icon: Switch,    color: 'warning' },
+  { type: 'HEALTH_CHECK',  label: '健康检查',  desc: '验证目标节点健康状态', icon: Monitor,   color: 'success' },
+  { type: 'NOTIFY',        label: '发送通知',  desc: '推送告警或事件通知',   icon: Bell,      color: 'primary' },
+  { type: 'WAIT',          label: '等待监测',  desc: '暂停并等待一段时间',   icon: Timer,     color: 'info' },
+  { type: 'RESTART_NODE',  label: '重启节点',  desc: '重启指定的服务器',     icon: Refresh,   color: 'warning' },
 ];
 
-// ============ 初始化加载 ============
-onMounted(async () => {
-  if (planId.value) {
-    const res: any = await request.get(`/api/task/plan/list`, { params: { current: 1, size: 1 } }); // 简化逻辑，实际应有详情接口
-    // 这里暂时解析已有的 steps_json 转换为节点（由于逻辑较复杂，初始版本先支持从零创建）
-    // TODO: 转换逻辑
-  }
+const getActionMeta = (type: string) =>
+  availableActions.find(a => a.type === type) ?? { label: type, desc: '', color: 'info' };
+
+const getNodeStyle = (type: string) => {
+  const c = {
+    STOP_NODE:     { border: '#f56c6c', glow: 'rgba(245,108,108,0.3)' },
+    PROMOTE_SLAVE: { border: '#e6a23c', glow: 'rgba(230,162,60,0.3)' },
+    HEALTH_CHECK:  { border: '#67c23a', glow: 'rgba(103,194,58,0.3)' },
+    NOTIFY:        { border: '#409eff', glow: 'rgba(64,158,255,0.3)' },
+    WAIT:          { border: '#909399', glow: 'rgba(144,147,153,0.3)' },
+    RESTART_NODE:  { border: '#e6a23c', glow: 'rgba(230,162,60,0.3)' },
+  }[type] || { border: '#555', glow: 'transparent' };
+  return {
+    border: `2px solid ${c.border}`, borderRadius: '10px',
+    background: 'linear-gradient(135deg, #1e2035, #252840)',
+    color: '#e8eaf6', width: '170px', boxShadow: `0 0 12px ${c.glow}`,
+    padding: '8px 12px', fontWeight: '600',
+  };
+};
+
+const buildLabel = (action: string, target: string) => {
+  const meta = getActionMeta(action);
+  return target ? `${meta.label}\n→ ${target}` : meta.label;
+};
+
+const markDirty = () => { if (!isLoading) isDirty.value = true; };
+
+onBeforeRouteLeave(async (to, from, next) => {
+  if (isDirty.value) {
+    try {
+      await ElMessageBox.confirm('您有未保存的修改，确定离开吗？', '提示', { type: 'warning' });
+      next();
+    } catch { next(false); }
+  } else next();
 });
 
-// ============ 拖拽与连接逻辑 ============
-const onDragStart = (event: DragEvent, type: string) => {
-  if (event.dataTransfer) {
-    event.dataTransfer.setData('application/vueflow', type);
-    event.dataTransfer.effectAllowed = 'move';
-  }
-};
+onMounted(async () => {
+  if (!planId.value) return;
+  isLoading = true;
+  try {
+    const res: any = await request.get(`/api/task/plan/${planId.value}`);
+    if (res.code === 200 && res.data && res.data.stepsJson) {
+      planName.value = res.data.planName;
+      const raw = JSON.parse(res.data.stepsJson);
+      
+      const layout = raw.layout || (Array.isArray(raw) ? null : raw.layout);
+      const steps = Array.isArray(raw) ? raw : (raw.steps || []);
 
-const onDrop = (event: DragEvent) => {
-  const type = event.dataTransfer?.getData('application/vueflow');
-  if (!type) return;
+      if (layout && layout.nodes) {
+        nodes.value = layout.nodes.map((n: any) => ({
+          ...n, label: buildLabel(n.data.action, n.data.target), style: getNodeStyle(n.data.action)
+        }));
+        edges.value = layout.edges || [];
+      } else {
+        nodes.value = steps.map((step: any, index: number) => ({
+          id: `node_${index}_${Date.now()}`, type: 'default',
+          position: step.x !== undefined ? { x: step.x, y: step.y } : { x: 100, y: 100 + index * 120 },
+          label: buildLabel(step.action, step.target),
+          data: { action: step.action, target: step.target || '', waitMs: step.waitMs || 1500 },
+          style: getNodeStyle(step.action),
+        }));
+      }
+      await nextTick();
+      setTimeout(() => { isDirty.value = false; isLoading = false; }, 500);
+    }
+  } catch (e) { ElMessage.error('加载失败'); isLoading = false; }
+});
 
-  const position = { x: event.clientX - 300, y: event.clientY - 100 }; // 粗略偏移计算
-
-  const newNode = {
-    id: `node_${Date.now()}`,
-    type: 'default',
-    position,
-    label: '', // Vue Flow 默认 label，我们会自定义显示
-    data: {
-      action: type,
-      target: '',
-      waitMs: 1500,
-    },
+const onDragStart = (e: DragEvent, type: string) => e.dataTransfer?.setData('application/vueflow', type);
+const onDrop = (e: DragEvent) => {
+  const type = e.dataTransfer?.getData('application/vueflow');
+  if (!type || !canvasRef.value) return;
+  const rect = canvasRef.value.getBoundingClientRect();
+  nodes.value.push({
+    id: `node_${Date.now()}`, type: 'default',
+    position: { x: e.clientX - rect.left - 85, y: e.clientY - rect.top - 40 },
+    label: buildLabel(type, ''), data: { action: type, target: '', waitMs: 1500 },
     style: getNodeStyle(type),
-  };
-
-  nodes.value.push(newNode);
+  });
+  markDirty();
 };
 
-const onConnect = (params: any) => {
-  edges.value.push({ ...params, animated: true, style: { stroke: '#409eff' } });
-};
-
-// ============ 节点配置 ============
-watch(nodes, () => {
-  // 监听节点点击（简化版：点击最后一个被修改的节点）
-  const active = nodes.value.find(n => n.selected);
-  if (active) {
-    selectedNode.value = active;
-    drawerVisible.value = true;
+const onConnect = (p: any) => { edges.value.push({ ...p, animated: true, style: { stroke: '#409eff', strokeWidth: 2 } }); markDirty(); };
+const onEdgeDoubleClick = ({ edge }: any) => { edges.value = edges.value.filter(e => e.id !== edge.id); markDirty(); };
+const onNodeClick = ({ node }: any) => { selectedNode.value = node; drawerVisible.value = true; };
+const onConfigChange = () => {
+  if (!selectedNode.value) return;
+  const n = nodes.value.find(i => i.id === selectedNode.value.id);
+  if (n) {
+    n.label = buildLabel(selectedNode.value.data.action, selectedNode.value.data.target);
+    n.data = { ...selectedNode.value.data };
+    markDirty();
   }
-}, { deep: true });
-
-const removeNode = (id: string) => {
-  nodes.value = nodes.value.filter(n => n.id !== id);
-  edges.value = edges.value.filter(e => e.source !== id && e.target !== id);
-  drawerVisible.value = false;
 };
+const removeNode = (id: string) => { nodes.value = nodes.value.filter(n => n.id !== id); edges.value = edges.value.filter(e => e.source !== id && e.target !== id); drawerVisible.value = false; markDirty(); };
+const clearAll = () => { nodes.value = []; edges.value = []; markDirty(); };
 
-// ============ 保存逻辑 ============
 const handleSave = async () => {
-  // 核心逻辑：将拓扑图转换为线性 steps_json
-  // 这里采用简单的拓扑排序思想：根据 source/target 关系排序
-  const steps = nodes.value.map((n, index) => ({
-    step: index + 1,
-    action: n.data.action,
-    target: n.data.target,
-    waitMs: n.data.waitMs
+  if (nodes.value.length === 0) return ElMessage.warning('画布为空');
+  const sorted = [...nodes.value]
+    .filter(n => n && n.position && typeof n.position.y !== 'undefined')
+    .sort((a, b) => {
+      if (Math.abs(a.position.y - b.position.y) > 30) return a.position.y - b.position.y;
+      return a.position.x - b.position.x;
+    });
+
+  const steps = sorted.map((n, i) => ({
+    step: i + 1, action: n.data?.action || '', target: n.data?.target || '',
+    waitMs: n.data?.waitMs || 1500, x: n.position?.x ?? 0, y: n.position?.y ?? 0
   }));
 
-  try {
-    const res: any = await request.post('/api/task/plan/save', {
-      id: Number(planId.value),
-      stepsJson: JSON.stringify(steps)
-    });
-    if (res.code === 200) {
-      ElMessage.success('编排保存成功');
-      router.push('/tasks/strategy');
+  const persistenceData = {
+    steps: steps,
+    layout: {
+      nodes: nodes.value.map(n => ({ id: n.id, type: n.type, position: n.position, data: n.data })),
+      edges: edges.value
     }
-  } catch (e) {
-    ElMessage.error('保存失败');
-  }
-};
-
-const goBack = () => router.back();
-
-// ============ 工具函数 ============
-const getNodeStyle = (type: string) => {
-  const colors: Record<string, string> = {
-    STOP_NODE:     '#f56c6c',
-    PROMOTE_SLAVE: '#e6a23c',
-    HEALTH_CHECK:  '#67c23a',
-    NOTIFY:        '#409eff',
-    WAIT:          '#909399',
   };
-  return {
-    border: `2px solid ${colors[type] || '#ccc'}`,
-    padding: '10px',
-    borderRadius: '8px',
-    background: '#1a1a1a',
-    color: '#fff',
-    width: '150px',
-    fontSize: '12px',
-    fontWeight: 'bold',
-    textAlign: 'center'
-  };
+
+  try {
+    const res: any = await request.post('/api/task/plan/save', { id: Number(planId.value), stepsJson: JSON.stringify(persistenceData) });
+    if (res.code === 200) {
+      ElMessage.success('✅ 编排保存成功！');
+      isDirty.value = false;
+      setTimeout(() => router.push('/tasks/strategy'), 800);
+    }
+  } catch (e) { ElMessage.error('保存出错'); }
 };
 
-const getActionTag = (action: string) => {
-  const found = availableActions.find(a => a.type === action);
-  return found ? found : { label: action, color: 'info' };
-};
+const handleBack = () => router.push('/tasks/strategy');
 </script>
 
 <style scoped>
-.workflow-container {
-  display: flex;
-  flex-direction: column;
-  height: calc(100vh - 120px);
-  background: #0f101a;
-  border-radius: 12px;
-  overflow: hidden;
-}
+.workflow-container { display: flex; flex-direction: column; height: calc(100vh - 84px); background: #0d0e1a; border-radius: 12px; overflow: hidden; }
+.workflow-header { height: 58px; background: #111228; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; border-bottom: 1px solid rgba(64,158,255,0.2); flex-shrink: 0; }
+.header-left { display: flex; align-items: center; gap: 12px; }
+.status-tag { margin-left: 8px; font-weight: bold; border: none; }
+.title { color: #e8eaf6; font-size: 15px; margin: 0; }
+.workflow-content { flex: 1; display: flex; overflow: hidden; }
 
-.workflow-header {
-  height: 60px;
-  background: #1a1c2e;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
+/* 左侧面板优化 */
+.node-panel { width: 220px; background: #0f1022; border-right: 1px solid rgba(255,255,255,0.08); padding: 16px 14px; flex-shrink: 0; display: flex; flex-direction: column; }
+.panel-title { color: #7b7faa; font-size: 11px; text-transform: uppercase; font-weight: 600; }
+.panel-subtitle { color: #4a4d6e; font-size: 11px; }
+.node-list { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 15px;
+.dnd-node { 
+  padding: 12px; border-radius: 8px; background: rgba(255,255,255,0.03); 
+  border: 1px solid rgba(255,255,255,0.06); color: #ccd0f0; cursor: grab; 
+  display: flex; align-items: center; gap: 12px; transition: all 0.2s; 
 }
+.dnd-node:hover { background: rgba(255, 255, 255, 0.08); border-color: rgba(64, 158, 255, 0.4); transform: translateX(4px); }
 
-.title {
-  color: #fff;
-  margin: 0;
-  font-size: 16px;
-}
+/* 图标颜色区分 */
+.icon-danger { color: #f56c6c; }
+.icon-warning { color: #e6a23c; }
+.icon-success { color: #67c23a; }
+.icon-primary { color: #409eff; }
+.icon-info { color: #909399; }
 
-.workflow-content {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-}
+.dnd-node-label { font-weight: 600; font-size: 13px; margin-bottom: 2px; }
+.dnd-node-desc { font-size: 10px; color: #5a5e88; }
 
-/* 左侧面板 */
-.node-panel {
-  width: 240px;
-  background: #141625;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
+/* 修复底部提示文字 */
+.panel-tip { margin-top: auto; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.05); }
+.tip-content { color: #409eff; font-size: 12px; font-weight: 500; text-shadow: 0 0 8px rgba(64,158,255,0.2); }
 
-.panel-title {
-  color: #8c8fb5;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-}
+.canvas-area { flex: 1; position: relative; background: #0b0c18; }
+.empty-hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: #3c3f5e; pointer-events: none; }
 
-.node-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.dnd-node {
-  padding: 12px;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  cursor: grab;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 14px;
-  transition: all 0.3s;
-}
-
-.dnd-node:hover {
-  background: rgba(255, 255, 255, 0.1);
-  transform: translateX(5px);
-}
-
-.node-danger { border-left: 4px solid #f56c6c; }
-.node-warning { border-left: 4px solid #e6a23c; }
-.node-success { border-left: 4px solid #67c23a; }
-.node-primary { border-left: 4px solid #409eff; }
-.node-info { border-left: 4px solid #909399; }
-
-.panel-tip {
-  margin-top: auto;
-  font-size: 12px;
-  color: #5c5f82;
-  font-style: italic;
-}
-
-/* 画布区域 */
-.canvas-area {
-  flex: 1;
-  background: #0b0c15;
-}
-
-/* Vue Flow 暗黑主题覆盖 */
-:deep(.vue-flow__node-default) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-}
-
-.config-form {
-  padding: 0 20px;
-}
-
-.drawer-footer {
-  margin-top: 40px;
-  padding-top: 20px;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-  display: flex;
-  justify-content: center;
-}
+:deep(.vue-flow__node-default) { box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6); white-space: pre-line; line-height: 1.4; }
+:deep(.vue-flow__edge-path) { stroke-dasharray: 5; animation: dash 10s linear infinite; stroke: #409eff; stroke-width: 2; }
+@keyframes dash { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+.drawer-footer { margin-top: 30px; display: flex; justify-content: space-between; }
 </style>
