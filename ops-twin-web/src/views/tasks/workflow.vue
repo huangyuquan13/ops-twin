@@ -188,7 +188,7 @@ const buildLabel = (action: string, target: string) => {
 
 const markDirty = () => { if (!isLoading) isDirty.value = true; };
 
-onBeforeRouteLeave(async (to, from, next) => {
+onBeforeRouteLeave(async (_to, _from, next) => {
   if (isDirty.value) {
     try {
       await ElMessageBox.confirm('您有未保存的修改，确定离开吗？', '提示', { type: 'warning' });

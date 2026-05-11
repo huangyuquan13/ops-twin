@@ -14,7 +14,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/system")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class SysController {
 
     @Autowired

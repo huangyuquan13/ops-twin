@@ -47,7 +47,7 @@
         @connect="onConnect"
         @edge-double-click="onEdgeDoubleClick"
       >
-        <Background pattern-color="#aaa" gap="15" />
+        <Background pattern-color="#aaa" :gap="15" />
         <Controls />
       </VueFlow>
     </div>
@@ -102,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Menu, Check, Delete, Cpu } from '@element-plus/icons-vue';
 import { VueFlow, useVueFlow } from '@vue-flow/core';
@@ -268,7 +268,7 @@ const handleSelectService = async (index: string) => {
 };
 
 // 路由离开守卫：防止跳转到其他页面时丢失数据
-onBeforeRouteLeave((to, from, next) => {
+onBeforeRouteLeave((_to, _from, next) => {
   if (isDirty.value) {
     ElMessageBox.confirm(
       '您有未保存的拓扑变更，离开此页面将导致修改丢失，确定离开吗？',

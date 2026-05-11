@@ -3,6 +3,7 @@ package com.ops.twin.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
 import com.ops.twin.entity.AssetCabinet;
 import com.ops.twin.entity.AssetHost;
@@ -15,7 +16,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/asset/cabinet")
-@CrossOrigin
 public class AssetCabinetController {
 
     @Autowired
@@ -52,6 +52,7 @@ public class AssetCabinetController {
     }
 
     // 保存或更新机柜
+    @AuditLog(operation = "CREATE_CABINET", description = "新增机柜")
     @PostMapping("/save")
     public Result<AssetCabinet> save(@RequestBody AssetCabinet cabinet) {
         // 1. 校验编号唯一性
@@ -100,6 +101,7 @@ public class AssetCabinetController {
     }
 
     // 删除机柜
+    @AuditLog(operation = "DELETE_CABINET", description = "删除机柜")
     @DeleteMapping("/delete/{id}")
     public Result<Boolean> delete(@PathVariable Long id) {
         AssetCabinet cabinet = cabinetService.getById(id);

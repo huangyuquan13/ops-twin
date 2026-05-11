@@ -76,7 +76,6 @@ import { ArrowLeft, Delete, VideoPause } from '@element-plus/icons-vue';
 import { ElMessageBox } from 'element-plus';
 import request from '@/api/request';
 
-const route    = useRouter();
 const router   = useRouter();
 const routeObj = useRoute();
 
@@ -164,7 +163,7 @@ const connectWs = () => {
     }
   };
 
-  ws.onerror = (e) => {
+  ws.onerror = (_e) => {
     isConnected.value = false;
     logs.value.push('[SYSTEM] WebSocket 连接错误，请检查后端服务');
   };

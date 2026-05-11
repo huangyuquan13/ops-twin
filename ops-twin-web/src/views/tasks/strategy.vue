@@ -19,7 +19,7 @@
           <el-input v-model.trim="queryParams.planName" placeholder="请输入预案名称" clearable />
         </el-form-item>
         <el-form-item label="关联服务">
-          <el-select v-model="queryParams.serviceId" placeholder="请选择逻辑服务" clearable>
+          <el-select v-model="queryParams.serviceId" placeholder="请选择逻辑服务" clearable style="width: 220px">
             <el-option
               v-for="s in serviceOptions"
               :key="s.id"
@@ -29,7 +29,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="预案类型">
-          <el-select v-model="queryParams.planType" placeholder="全部类型" clearable>
+          <el-select v-model="queryParams.planType" placeholder="全部类型" clearable style="width: 200px">
             <el-option label="演练 (DRILL)"       value="DRILL" />
             <el-option label="故障切换 (FAILOVER)" value="FAILOVER" />
             <el-option label="扩缩容 (SCALE)"     value="SCALE" />

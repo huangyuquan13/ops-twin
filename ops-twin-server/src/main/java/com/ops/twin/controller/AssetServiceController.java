@@ -2,6 +2,7 @@ package com.ops.twin.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
 import com.ops.twin.entity.AssetHost;
 import com.ops.twin.entity.AssetService;
@@ -18,7 +19,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/asset/service")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class AssetServiceController {
 
     @Autowired
@@ -59,6 +59,7 @@ public class AssetServiceController {
     }
 
     // 保存或更新服务
+    @AuditLog(operation = "CREATE_SERVICE", description = "新增服务")
     @PostMapping("/save")
     public Result<AssetService> save(@RequestBody AssetService service) {
         // 校验名称唯一性
@@ -137,6 +138,7 @@ public class AssetServiceController {
     }
 
     // 删除服务
+    @AuditLog(operation = "DELETE_SERVICE", description = "删除服务")
     @DeleteMapping("/delete/{id}")
     public Result<Boolean> delete(@PathVariable Long id) {
         // 删除服务本身

@@ -31,5 +31,33 @@
 - [x] **按钮级权限**: userStore 存储 permissions + menus（localStorage 持久化），strategy/host/user/index/cabinet 五个页面按钮已接入 v-if 权限控制。
 - [x] **动态侧边栏**: layout 改为从 userStore.menuSections 动态渲染，不同角色看到不同菜单，刷新不丢失。
 
+### [x] Stage 5: WebSocket 与实时通信 (已完成)
+- [x] **模拟终端日志生成器**: 延时 + 随机语义标签模拟实战演练推流。
+- [x] **任务终止机制**: 优雅停止 + 即时推送 + 数据库 CANCELLED 状态更新。
+
+### [x] Stage 6: 逻辑服务拓扑编排 (已完成)
+- [x] **Vue Flow 拓扑编辑器**: 拖拽物理节点到画布，可视化构建逻辑服务拓扑。
+- [x] **服务-主机绑定**: ServiceHostMap 映射表，拓扑保存同步更新绑定关系。
+
+### [x] Stage 7: 大屏可视化增强 (已完成)
+- [x] **ECharts 图表增强**: 效能大盘 KPI 统计卡片 + 饼图 + 趋势图。
+- [x] **响应式适配**: 大屏布局自适应不同分辨率。
+
+### [x] Stage 8: AOP 审计日志 (已完成)
+- [x] **@AuditLog 注解**: 自定义方法级审计注解，记录操作类型与描述。
+- [x] **AuditLogAspect 切面**: 环绕通知自动拦截注解方法，提取操作人（从 Authorization 头），记录操作结果（SUCCESS / FAILED）。
+- [x] **控制器接入**: 6 个核心控制器（AssetCabinet、Asset、User、Role、TaskPlan、AssetService）的创建/删除方法全部接入 AOP 审计。
+
+### [x] Stage 9: Docker 容器化 (已完成)
+- [x] **后端 Dockerfile**: 基于 eclipse-temurin:17-jre-alpine 构建 Spring Boot 镜像。
+- [x] **前端 Dockerfile**: 多阶段构建（node:20-alpine 编译 + nginx:alpine 运行），nginx 反向代理 API/WS/Uploads。
+- [x] **Docker Compose**: 一键编排 MySQL + Server + Nginx，健康检查 + 依赖等待 + 数据持久化。
+
+### [x] Stage 10: 文档完善 (已完成)
+- [x] **项目 README**: 技术栈表格 + Docker 快速启动 + 本地开发 + 测试命令 + 文档链接。
+- [x] **部署文档**: `04_DEPLOY_部署文档.md` — Docker 部署 + 本地手动部署 + 生产注意事项。
+- [x] **API 文档 JWT**: 在 03_API 顶部补充 JWT 认证说明（Bearer Token 格式）。
+- [x] **实施计划更新**: 追加 Stage 5-10 完成标记。
+
 ## 今日焦点
 详见同目录下的 `today_plan.md`。

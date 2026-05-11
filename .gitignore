@@ -17,6 +17,10 @@ ops-twin-server/.env.local
 ops-twin-server/src/main/resources/application.yml
 ops-twin-server/src/main/resources/application-*.yml
 ops-twin-server/ops_twin_db*.sql
+ops-twin-server/新增*.sql
+docker-compose.yml
+docs/04_DEPLOY_*
+docs/superpowers/
 **/secrets/
 **/credentials/
 **/*password*

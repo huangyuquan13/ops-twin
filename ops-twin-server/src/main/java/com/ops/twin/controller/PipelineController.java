@@ -14,7 +14,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/pipeline")
-@CrossOrigin
 public class PipelineController {
 
     @Autowired

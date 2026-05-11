@@ -2,6 +2,7 @@ package com.ops.twin.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
 import com.ops.twin.entity.AuditEvent;
 import com.ops.twin.entity.TaskPlan;
@@ -17,7 +18,6 @@ import org.springframework.web.bind.annotation.*;
  */
 @RestController
 @RequestMapping("/api/task/plan")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class TaskPlanController {
 
     @Autowired
@@ -58,6 +58,7 @@ public class TaskPlanController {
     /**
      * 新增或更新预案
      */
+    @AuditLog(operation = "CREATE_PLAN", description = "新增预案")
     @PostMapping("/save")
     public Result<TaskPlan> save(@RequestBody TaskPlan plan) {
         // 校验同一逻辑服务下预案名称唯一
@@ -84,6 +85,7 @@ public class TaskPlanController {
     /**
      * 删除预案
      */
+    @AuditLog(operation = "DELETE_PLAN", description = "删除预案")
     @DeleteMapping("/delete/{id}")
     public Result<Boolean> delete(@PathVariable Long id) {
         TaskPlan plan = taskPlanService.getById(id);

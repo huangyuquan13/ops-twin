@@ -1,6 +1,7 @@
 package com.ops.twin.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
 import com.ops.twin.entity.AuditEvent;
 import com.ops.twin.entity.SysRole;
@@ -21,7 +22,6 @@ import java.util.stream.Collectors;
  */
 @RestController
 @RequestMapping("/api/system/role")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class RoleController {
 
     @Autowired
@@ -40,6 +40,7 @@ public class RoleController {
     }
 
     /** 保存角色（新增或更新） */
+    @AuditLog(operation = "CREATE_ROLE", description = "新增角色")
     @PostMapping("/save")
     public Result<SysRole> save(@RequestBody SysRole role) {
         sysRoleService.saveOrUpdate(role);
@@ -47,6 +48,7 @@ public class RoleController {
     }
 
     /** 删除角色 */
+    @AuditLog(operation = "DELETE_ROLE", description = "删除角色")
     @DeleteMapping("/delete/{id}")
     public Result<Boolean> delete(@PathVariable Long id) {
         // 删除关联的权限映射

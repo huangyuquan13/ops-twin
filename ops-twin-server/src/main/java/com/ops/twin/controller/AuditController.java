@@ -17,7 +17,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/audit")
-@CrossOrigin(origins = "*", maxAge = 3600)
 public class AuditController {
 
     @Autowired

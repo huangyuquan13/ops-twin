@@ -1,5 +1,6 @@
 package com.ops.twin.controller;
 
+import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
 import com.ops.twin.entity.AssetHost;
 import com.ops.twin.mapper.AssetHostMapper;
@@ -10,7 +11,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/asset")
-@CrossOrigin // 支持跨域
 public class AssetController {
 
     @Autowired
@@ -49,6 +49,7 @@ public class AssetController {
     private com.ops.twin.mapper.AssetCabinetMapper assetCabinetMapper;
 
     // 保存或更新主机
+    @AuditLog(operation = "CREATE_HOST", description = "新增主机")
     @PostMapping("/host/save")
     public Result<String> save(@RequestBody AssetHost host) {
         // 1. 校验主机名唯一性
@@ -101,6 +102,7 @@ public class AssetController {
     }
 
     // 删除主机
+    @AuditLog(operation = "DELETE_HOST", description = "删除主机")
     @DeleteMapping("/host/delete/{id}")
     public Result<String> delete(@PathVariable Long id) {
         assetHostMapper.deleteById(id);

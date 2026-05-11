@@ -1,5 +1,31 @@
 # 后端 Spring Boot 接口文档
 
+## JWT 认证说明
+
+所有接口（除登录接口外）均需在请求头中携带 JWT 令牌：
+
+```
+Authorization: Bearer <token>
+```
+
+**获取 Token**：调用 `POST /api/auth/login` 登录接口，成功后返回：
+
+```json
+{
+  "code": 200,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiJ9..."
+  }
+}
+```
+
+**Token 使用规则**：
+- 前端登录后将 token 存入 localStorage，每次请求通过 Axios 拦截器自动附加
+- Token 过期后需重新登录获取
+- 不同角色的用户拥有不同的菜单和按钮权限
+
+---
+
 请保持良好的前后端分离修养，所有的接口均返回统一结构：
 ```json
 {

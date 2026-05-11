@@ -11,13 +11,10 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.ops.twin.entity.AssetHost;
 import com.ops.twin.mapper.AssetHostMapper;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.CrossOrigin;
-
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/analysis")
-@CrossOrigin // 解决前后端分离情况下的跨域问题
 public class AnalysisController {
 
     @Autowired

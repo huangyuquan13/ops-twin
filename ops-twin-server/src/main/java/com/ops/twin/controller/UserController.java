@@ -2,6 +2,7 @@ package com.ops.twin.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
 import com.ops.twin.entity.SysUser;
 import com.ops.twin.mapper.SysUserMapper;
@@ -16,7 +17,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/system/user")
-@CrossOrigin
 public class UserController {
 
     @Autowired
@@ -74,6 +74,7 @@ public class UserController {
     }
 
     // 3. 保存或更新用户
+    @AuditLog(operation = "CREATE_USER", description = "新增用户")
     @PostMapping("/save")
     public Result<String> save(@RequestBody SysUser user) {
         // 如果密码不为空，说明用户输入了新密码，需要进行加密
@@ -98,6 +99,7 @@ public class UserController {
     }
 
     // 4. 删除用户
+    @AuditLog(operation = "DELETE_USER", description = "删除用户")
     @DeleteMapping("/delete/{id}")
     public Result<String> delete(@PathVariable Long id) {
         sysUserMapper.deleteById(id);

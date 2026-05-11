@@ -139,11 +139,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
   CSS2DRenderer,
   CSS2DObject,
-} from "three/examples/jsm/renderers/CSS2DRenderer";
+} from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import * as TWEEN from "@tweenjs/tween.js";
 import request from "@/api/request";
 
@@ -158,7 +158,6 @@ const selectedCabinet = ref<any>(null); // 被选中的聚合机柜数据
 const isThermalMode = ref(false);
 const currentView = ref("L1"); // 状态机: L1(全景) -> L2(机柜) -> L3(硬件节点)
 const activeBladeData = ref<any>(null); // L3状态下的刀片节点数据
-const hologramCardRef = ref<HTMLElement | null>(null); // L3 标牌的 DOM 引用
 
 // Three.js 核心对象
 let scene: THREE.Scene;
@@ -168,7 +167,6 @@ let labelRenderer: CSS2DRenderer;
 let controls: OrbitControls;
 let frameId: number;
 let activeCabinet: THREE.Group | null = null;
-let activeBladeObject: THREE.Object3D | null = null; // 当前选中的 3D 刀片对象
 
 // 视角记忆：记录用户从 L1 飞往 L2 之前，停留在 L1 的相机位置和焦点
 const l1CameraState = {
@@ -255,12 +253,12 @@ const fetchAndRenderAssets = async () => {
       }),
     ]);
 
-    if (cabRes.code === 200) {
-      cabinetList.value = cabRes.data;
+    if ((cabRes as any).code === 200) {
+      cabinetList.value = (cabRes as any).data;
     }
-    if (hostRes.code === 200) {
-      hostList.value = hostRes.data.records;
-      total.value = hostRes.data.total;
+    if ((hostRes as any).code === 200) {
+      hostList.value = (hostRes as any).data.records;
+      total.value = (hostRes as any).data.total;
     }
     renderHostModels();
   } catch (error) {
@@ -431,7 +429,7 @@ const onCanvasClick = (event: MouseEvent) => {
   // 【极其关键】因为机柜是线框 (LineSegments)，Three.js 默认线框点击阈值非常大 (1)
   // 导致鼠标在两个机柜中间时，极其容易误判点到后面的机柜！降低阈值提高精准度。
   raycaster.params.Line.threshold = 0.1;
-  raycaster.setFromCamera({ x, y }, camera);
+  raycaster.setFromCamera(new THREE.Vector2(x, y), camera);
 
   // 获取所有相交的物体
   const intersects = raycaster.intersectObjects(scene.children, true);
@@ -453,7 +451,6 @@ const onCanvasClick = (event: MouseEvent) => {
       if (current) {
         currentView.value = "L3";
         activeBladeData.value = current.userData;
-        activeBladeObject = current; // 记录 3D 对象引用用于坐标投影同步
 
         return;
       }
@@ -516,7 +513,6 @@ const goBack = () => {
     // 从 L3 退回到 L2
     currentView.value = "L2";
     activeBladeData.value = null;
-    activeBladeObject = null;
     return;
   }
 
