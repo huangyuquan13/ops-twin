@@ -42,59 +42,67 @@ src/main/java/com/ops/twin/
     AnalysisController.java    # GET /api/analysis/kpi-stats, asset-distribution
     AssetController.java       # CRUD /api/asset/host/* (cabinet + rack binding)
     AssetCabinetController.java # CRUD /api/asset/cabinet/*
-    AssetServiceController.java # CRUD /api/asset/service/* + topology save/load
+    AssetServiceController.java # CRUD /api/asset/service/* + topology + hosts list
     PipelineController.java    # Legacy: /api/pipeline/execute + logs
-    SysController.java         # GET /api/system/menus
+    SysController.java         # GET /api/system/menus?roleId= + /permissions/all
     UserController.java        # User CRUD + avatar upload
-    TaskPlanController.java    # CRUD /api/task/plan/* (plan library)
-    TaskRecordController.java  # POST trigger/{planId}, GET list, GET {id}, POST {id}/terminate
-  entity/                      # MyBatis-Plus @Data entities (10 tables)
-  mapper/                      # BaseMapper<T> interfaces (no XML)
+    TaskPlanController.java    # CRUD /api/task/plan/* (+ audit logging)
+    TaskRecordController.java  # POST trigger, GET list, GET {id}, POST {id}/terminate (+ audit)
+    RoleController.java        # CRUD role + permission assignment (+ audit)
+    AuditController.java       # GET /api/audit/list (6 event types) + log write
+  entity/                      # MyBatis-Plus @Data entities (13 tables)
+  mapper/                      # BaseMapper<T> interfaces (11 mappers)
   service/
-    TaskExecutionEngine.java   # @Async step executor with cancel support (ConcurrentHashMap flag)
+    TaskExecutionEngine.java   # @Async step executor with cancel + service validation
     TaskPlanService.java       # IService<TaskPlan> + unique name check
     TaskRecordService.java     # IService<TaskRecord> + triggerAsync + terminate
-    impl/TaskPlanServiceImpl.java
-    impl/TaskRecordServiceImpl.java
+    SysRoleService.java        # IService<SysRole>
+    AuditEventService.java     # IService<AuditEvent>
+    impl/                       # ServiceImpl classes (5)
     PipelineService.java       # Legacy @Async simulation
   websocket/
     TaskLogWebSocketHandler.java # Per-recordId session map, broadcast() for log push
 ```
 
-## Database Tables (10)
+## Database Tables (13)
 
 | Table | Purpose |
 |---|---|
 | `sys_user` | User accounts (username, md5 password, avatar, role_id) |
-| `sys_permission` | Menu/permission tree (path, component, icon, permission_code) |
+| `sys_role` | Roles (role_name, role_code) — Stage 4 |
+| `sys_permission` | Menu/button permission tree (type=1 menu, type=2 button, permission_code) |
+| `sys_role_permission` | Role-permission many-to-many — Stage 4 |
+| `audit_event` | Security audit log (operator, event_type, detail) — Stage 4 |
 | `asset_cabinet` | Physical cabinets (cabinet_id, pos_x, pos_z, max_u) |
-| `asset_host` | Physical servers (hostname, ip, status, cpu, memory, cabinet_id, rack_pos) |
-| `asset_service` | Logical service registry (service_name, owner, description) |
-| `service_host_map` | Service-to-host many-to-many mapping |
+| `asset_host` | Physical servers (hostname, ip, status, cpu, memory, host_type, cabinet_id, rack_pos) |
+| `asset_service` | Logical service registry (service_name, owner, description, topology_json) |
+| `service_host_map` | Service-to-host many-to-many |
 | `task_plan` | Drill plan library (plan_name, service_id, plan_type, priority, steps_json, status) |
-| `task_record` | Execution records (plan_id, run_status: PENDING/RUNNING/SUCCESS/FAILED/CANCELLED, duration_ms) |
-| `pipeline_task` | Legacy chaos drill tasks |
-| `pipeline_log` | Legacy drill log entries |
-| `audit_event` | Fault event audit trail |
+| `task_record` | Execution records (run_status: PENDING/RUNNING/SUCCESS/FAILED/CANCELLED) |
+| `pipeline_task` | Legacy chaos drill tasks (deprecated) |
+| `pipeline_log` | Legacy drill log entries (deprecated) |
 
 ## Key Flows
 
 ### Plan Execution (trigger → engine → WebSocket → terminal)
-1. `TaskRecordController.trigger(planId)` — validates plan exists & enabled, calls `taskRecordService.triggerAsync()`
-2. `TaskRecordServiceImpl.triggerAsync()` — creates PENDING record, calls `executionEngine.execute(recordId, plan)`
-3. `TaskExecutionEngine.execute()` — @Async, parses steps_json, loops through steps with Thread.sleep(), pushes logs via `wsHandler.broadcast()`, updates run_status
-4. Frontend terminal connects `ws://localhost:8080/ws/task/log/{recordId}` to receive stream
+1. `TaskRecordController.trigger(planId)` — validates plan & service, calls `triggerAsync()`
+2. `TaskRecordServiceImpl.triggerAsync()` — creates PENDING record, calls `executionEngine.execute()`
+3. `TaskExecutionEngine.execute()` — @Async: validates service/hosts, parses steps_json, runs steps, pushes via WebSocket
+4. Frontend terminal connects `ws://localhost:8080/ws/task/log/{recordId}`
 
-### Task Termination (cancel)
-1. Frontend calls `POST /api/task/record/{id}/terminate`
-2. `TaskRecordController.terminate()` → `taskRecordService.terminate()` → `executionEngine.cancel(recordId)` sets `cancelFlags[recordId] = true`
-3. Engine checks flag before each step, pushes `[WARN] 用户已终止演练任务` then returns
+### RBAC Permissions
+1. Login → `GET /api/system/menus?roleId=` → returns `{ menus, permissions }`
+2. Frontend stores in Pinia + localStorage, sidebar renders from `menuSections`
+3. Buttons: `v-if="userStore.hasPerm('strategy:add')"`
+
+### Audit Events (6 types)
+CREATE_PLAN / UPDATE_PLAN / DELETE_PLAN / EXECUTE_PLAN / UPDATE_ROLE_PERM / OTHER
 
 ## Conventions
 
-- Controllers use `@CrossOrigin(origins = "*")` (wide-open CORS, no Spring Security)
+- `@CrossOrigin(origins = "*")` on every controller
 - Every response wrapped in `Result<T>` with code 200/500
-- Passwords stored as MD5, default new user password: `123456`
-- Login returns hardcoded mock token — no real JWT implementation
+- Passwords stored as MD5, default: `123456`
+- Login returns mock token — no real JWT
 - No tests written yet
-- Avatar files saved to `uploads/` directory, served via WebConfig static mapping
+- Avatar files saved to `uploads/`

@@ -92,11 +92,15 @@
 - 说明：根据角色返回菜单树 + 按钮权限码列表。
 - 返回：`{ menus: [...], permissions: ["strategy:add", ...] }`
 
-### 4.3 角色管理 CRUD
+### 4.3 全量权限列表（供权限树构建）
+**接口路径**: `GET /api/system/permissions/all`
+- 说明：返回 `sys_permission` 全表数据（含菜单+按钮），供权限管理页构建 el-tree。
+
+### 4.4 角色管理
 **接口路径**: `GET /api/system/role/list` , `POST /api/system/role/save` , `DELETE /api/system/role/delete/{id}`
 - 说明：角色列表查询、新增/更新、删除（级联删除权限映射）。
 
-### 4.4 角色权限配置
+### 4.5 角色权限配置
 **接口路径**: `GET /api/system/role/{id}/permissions` , `POST /api/system/role/{id}/permissions`
 - 说明：查询角色的权限 ID 列表 / 保存角色权限（Body: `{ permissionIds: [1,2,3] }`）。
 

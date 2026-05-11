@@ -39,7 +39,8 @@ src/
       index.vue         # 3D digital twin (Three.js, L1/L2/L3 drill-down)
       analysis.vue      # ECharts analytics dashboard
     assets/
-      host.vue          # Server CRUD + cabinet/RackU binding (real)
+      cabinet.vue       # Cabinet CRUD + button permission control (real)
+      host.vue          # Server CRUD + cabinet/RackU binding + button permission (real)
       service.vue       # Logical service mapping via Vue Flow drag-drop topology (real)
     tasks/
       index.vue         # Task hub dashboard (stats + plan list + quick actions) (real)
@@ -58,7 +59,19 @@ src/
 | `assets/service.vue` | Left: service list. Right: Vue Flow canvas. Drag hosts from right sidebar onto canvas to build logical topology. Edges represent network links. |
 | `tasks/strategy.vue` | Plan CRUD. "执行" calls POST trigger → gets recordId → router.push to terminal. "编排" → workflow.vue. |
 | `tasks/workflow.vue` | Left: action palette (STOP_NODE, HEALTH_CHECK, etc.). Center: Vue Flow canvas. Drag actions → configure target/waitMs in drawer → save as steps_json. |
-| `tasks/terminal.vue` | Reads recordId from query → WebSocket ws://localhost:8080/ws/task/log/{id} → real-time colored log stream. Terminate button (POST /api/task/record/{id}/terminate). |
+| `tasks/terminal.vue` | Reads recordId from query → WebSocket ws://localhost:8080/ws/task/log/{id} → real-time colored log stream. Terminate button. |
+| `system/user.vue` | User CRUD + avatar upload. Buttons gated by user:add/edit/delete permissions. |
+| `system/role.vue` | Left: role list. Right: el-tree permission tree (menu+button). check-strictly + ensureParents linkage. |
+| `system/audit.vue` | Audit log table with operator/eventType search. 6 event types with color tags. |
+
+## Store
+
+`store/user.ts` — Pinia store with localStorage persistence:
+- `userInfo` / `permissions[]` / `menus[]` — restored from localStorage on init
+- `hasPerm(code)` — check button-level permission
+- `menuSections` — computed tree from flat menus for dynamic sidebar rendering
+- `setMenus()` / `setPermissions()` — auto-persist to localStorage
+- `clearUserInfo()` — wipe all state + localStorage on logout
 
 ## Conventions
 
