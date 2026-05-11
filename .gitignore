@@ -27,8 +27,9 @@ docs/superpowers/
 **/*secret*
 **/*token*
 
-# === Uploads (runtime user files) ===
+# === Uploads (runtime user files ===
 ops-twin-server/uploads/
+images/
 
 # === IDE ===
 .idea/
