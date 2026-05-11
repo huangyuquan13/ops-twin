@@ -1,5 +1,6 @@
 package com.ops.twin.config;
 
+import com.ops.twin.websocket.DashboardWebSocketHandler;
 import com.ops.twin.websocket.TaskLogWebSocketHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Configuration;
@@ -9,7 +10,8 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 
 /**
  * WebSocket 总配置类
- * 注册实时日志推送端点：/ws/task/log/{recordId}
+ * /ws/task/log/{recordId} — 演练终端实时日志
+ * /ws/dashboard/events    — 3D 大屏实时状态推送
  */
 @Configuration
 @EnableWebSocket
@@ -18,11 +20,17 @@ public class WebSocketConfig implements WebSocketConfigurer {
     @Autowired
     private TaskLogWebSocketHandler taskLogWebSocketHandler;
 
+    @Autowired
+    private DashboardWebSocketHandler dashboardWebSocketHandler;
+
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
         registry
-            // 注册日志推送 Handler，允许所有来源（开发阶段）
             .addHandler(taskLogWebSocketHandler, "/ws/task/log/{recordId}")
+            .setAllowedOrigins("*");
+
+        registry
+            .addHandler(dashboardWebSocketHandler, "/ws/dashboard/events")
             .setAllowedOrigins("*");
     }
 }

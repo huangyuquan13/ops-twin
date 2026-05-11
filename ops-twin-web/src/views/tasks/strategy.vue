@@ -371,10 +371,10 @@ const handleRun = (row: any) => {
       });
       if (res.code === 200) {
         const { recordId, planName } = res.data;
-        ElMessage.success(`演练引擎已启动，流水 ID：${recordId}，正在跳转终端...`);
-        // 跳转至实时终端页，通过 query 传参
+        ElMessage.success(`演练引擎已启动，跳转至 3D 大屏实时观察`);
+        // 跳转到 3D 大屏，带上 recordId + planName，大屏会自动弹出浮动终端
         router.push({
-          path: '/tasks/terminal',
+          path: '/dashboard/index',
           query: { recordId: String(recordId), planName }
         });
       } else {

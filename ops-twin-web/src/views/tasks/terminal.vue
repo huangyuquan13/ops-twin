@@ -17,8 +17,11 @@
           size="small"
           type="danger"
           :icon="VideoPause"
+          :disabled="['SUCCESS','FAILED','CANCELLED'].includes(runStatus)"
           @click="handleTerminate"
-        >终止命令</el-button>
+        >
+          {{ ['SUCCESS','FAILED','CANCELLED'].includes(runStatus) ? '已完成' : '终止命令' }}
+        </el-button>
         <el-button size="small" :icon="Delete" @click="clearLogs">清屏</el-button>
       </div>
     </div>
@@ -82,6 +85,7 @@ const routeObj = useRoute();
 // ============ 路由参数 ============
 const recordId = ref<string>(routeObj.query.recordId as string || '');
 const planName = ref<string>(routeObj.query.planName as string || '');
+const initialStatus = ref<string>(routeObj.query.status as string || '');
 
 // ============ 终端状态 ============
 const logs       = ref<string[]>([]);
@@ -278,12 +282,36 @@ const goToStrategy = () => {
 };
 
 // ============ 生命周期 ============
-onMounted(() => {
-  if (recordId.value) {
-    connectWs();
-  } else {
-    logs.value.push('[SYSTEM] 未传入 recordId，请从预案方案库或任务总览点击"执行"进入本页');
+onMounted(async () => {
+  // 无 recordId 直接访问终端页，不做任何操作
+  if (!recordId.value) {
+    logs.value.push('[SYSTEM] 未指定任务流水 ID，请从预案方案库执行演练后自动跳转');
+    return;
   }
+
+  // 如果从浮动终端传来已知终态，直接显示
+  if (initialStatus.value && ['SUCCESS', 'FAILED', 'CANCELLED'].includes(initialStatus.value)) {
+    runStatus.value = initialStatus.value;
+    if (initialStatus.value === 'SUCCESS') progressPct.value = 100;
+    // 不连 WebSocket，不跑进度条
+    return;
+  }
+
+  // 先查 API 拿真实状态
+  try {
+    const res: any = await request.get(`/api/task/record/${recordId.value}`);
+    if (res.code === 200 && res.data) {
+      const s = res.data.runStatus;
+      if (['SUCCESS', 'FAILED', 'CANCELLED'].includes(s)) {
+        runStatus.value = s;
+        if (s === 'SUCCESS') progressPct.value = 100;
+        return;  // 终态，不连 WS
+      }
+    }
+  } catch (_) {}
+
+  // 运行中或未知，正常连 WebSocket
+  connectWs();
 });
 
 onUnmounted(() => {

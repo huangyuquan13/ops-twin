@@ -24,18 +24,20 @@
 - [x] **workflow 参数守卫**: `onMounted` 检测无 planId → 跳回任务总览
 - [x] **设定方案联动**: index 点击「设定方案」→ 跳转 strategy 并自动打开新增弹窗
 
-### [x] Stage 4: 系统管理 (安全与审计 - 刚刚完成)
+### [x] Stage 4: 系统管理 (安全与审计 — 已完成)
+- [x] **JWT 真实认证 + bcrypt 密码 + CORS 集中管控**：jjwt 0.12.5 生成验证 Bearer Token，bcrypt 哈希存储密码，旧 MD5 登录时自动迁移。CORS 统一在 `WebConfig.java` 管控，移除所有 Controller 的 `@CrossOrigin`。
 - [x] **用户中心**: 账号、密码、个人资料管理（`system/user.vue` CRUD + 头像上传 + 按钮权限控制）。
 - [x] **权限配置**: `sys_role` + `sys_role_permission` 两张新表，角色 CRUD + el-tree 权限树勾选分配。`sys_permission` 扩展 type 字段（1=菜单 2=按钮），permission_code 控制按钮级权限。
-- [x] **操作审计**: 6 种事件类型（新增/编辑/删除/执行预案 + 修改角色权限 + 其他），前端列表 + 搜索筛选 + 刷新，操作人改为真实用户名。
+- [x] **操作审计**: 6 种事件类型（新增/编辑/删除/执行预案 + 修改角色权限 + 其他），前端列表 + 搜索筛选 + 刷新，操作人改为真实用户名。AOP 切面 `@AuditLog` 自动拦截写入方法，记录到 `audit_event` 表。
 - [x] **按钮级权限**: userStore 存储 permissions + menus（localStorage 持久化），strategy/host/user/index/cabinet 五个页面按钮已接入 v-if 权限控制。
 - [x] **动态侧边栏**: layout 改为从 userStore.menuSections 动态渲染，不同角色看到不同菜单，刷新不丢失。
 
-### [x] Stage 5: WebSocket 与实时通信 (已完成)
-- [x] **模拟终端日志生成器**: 延时 + 随机语义标签模拟实战演练推流。
-- [x] **任务终止机制**: 优雅停止 + 即时推送 + 数据库 CANCELLED 状态更新。
+### [x] Stage 5: 真实执行引擎 (已完成)
+- [x] **真实执行引擎 — 查主机表 + 改状态 + WebSocket 广播 3D 事件**：`TaskExecutionEngine` 根据 hostname 查询 `asset_host` 表，动态修改 host status (1/2/3)，通过 `/ws/dashboard/events` 广播结构化 JSON 事件到 3D 大屏。
+- [x] **双通道 WebSocket**：`/ws/task/log/{recordId}` 推流终端日志 + `/ws/dashboard/events` 广播 3D 状态变更事件。
 
-### [x] Stage 6: 逻辑服务拓扑编排 (已完成)
+### [x] Stage 6: 演练联动与逻辑拓扑 (已完成)
+- [x] **演练联动 — 浮动终端 + 3D 实时变色 + DRILL 自动恢复**：策略页触发演练 → 3D 大屏主机 LED 实时变色（绿→黄→红）→ 浮动迷你终端面板自动弹出。DRILL 执行结束后主机状态自动恢复为健康，FAILOVER 持久化变更。
 - [x] **Vue Flow 拓扑编辑器**: 拖拽物理节点到画布，可视化构建逻辑服务拓扑。
 - [x] **服务-主机绑定**: ServiceHostMap 映射表，拓扑保存同步更新绑定关系。
 
@@ -61,3 +63,24 @@
 
 ## 今日焦点
 详见同目录下的 `today_plan.md`。
+
+---
+
+### 联动验证 — 全流程测试步骤
+
+以下步骤用于验证 Ops-Twin 全部 10 个 Stage 的端到端联动效果：
+
+1. **启动环境**：`docker compose up`（MySQL + Spring Boot + Nginx）
+2. **登录**：`POST /api/auth/login`，使用 admin 账号获取 JWT Token
+3. **资产管理**：在资产中心创建机柜 + 主机，绑定 cabinet_id 和 rack_pos
+4. **3D 验证**：打开 3D 孪生大屏，验证主机模型出现在正确机柜插槽位置
+5. **逻辑服务**：创建逻辑服务，在 Vue Flow 拓扑中将主机绑定到服务
+6. **创建预案**：在预案方案库创建 DRILL 预案，关联逻辑服务
+7. **编排步骤**：打开工作流编辑器，拖拽步骤并选择目标主机
+8. **执行演练**：点击"执行"触发演练 → 自动跳转到终端页面查看实时日志
+9. **3D 联动**：切换到 3D 大屏，观察主机 LED 颜色实时变化（绿→黄→红）
+10. **浮动终端**：确认浮动迷你终端面板自动弹出，展示与终端页面同步的日志流
+11. **DRILL 恢复**：演练结束后，确认主机状态自动恢复为 1(健康)，3D LED 变回绿色
+12. **审计日志**：在操作审计页面查看 EXECUTE_PLAN 事件记录
+13. **权限控制**：切换普通用户登录，验证侧边栏菜单和按钮权限生效
+14. **测试套件**：运行 `mvn test`（15 后端测试 + 4 前端 Vitest 测试全部通过）

@@ -2,11 +2,18 @@
 
 ## JWT 认证说明
 
+本项目使用 **真实 JWT 认证**（jjwt 0.12.5），非 mock 模式。
+
 所有接口（除登录接口外）均需在请求头中携带 JWT 令牌：
 
 ```
 Authorization: Bearer <token>
 ```
+
+**密码方案**：
+- 新用户密码使用 **bcrypt** 哈希存储，安全性更高
+- 旧 MD5 密码在用户登录时**自动迁移**为 bcrypt，无需手动处理
+- 全局 CORS 配置集中在 `WebConfig.java`，不使用 `@CrossOrigin` 注解
 
 **获取 Token**：调用 `POST /api/auth/login` 登录接口，成功后返回：
 
@@ -14,7 +21,9 @@ Authorization: Bearer <token>
 {
   "code": 200,
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiJ9..."
+    "token": "eyJhbGciOiJIUzI1NiJ9...",
+    "username": "admin",
+    "roles": ["ADMIN"]
   }
 }
 ```
@@ -47,6 +56,23 @@ Authorization: Bearer <token>
 ### 1.3 拉取 3D 节点相对信息
 **接口路径**: `GET /api/asset/nodes/scence`
 - 说明：专门给 Three.js 用的轻量化同步接口。
+
+### 1.4 3D 大屏实时事件推送 (WebSocket) ✔已实现
+**接口路径**: `WS /ws/dashboard/events`
+- 说明：任务执行引擎在演练过程中向该通道广播结构化 JSON 事件，3D 大屏实时监听并更新主机 LED 颜色。
+- 事件格式：
+```json
+{
+  "type": "HOST_STATUS_CHANGE",
+  "data": {
+    "hostId": 1,
+    "hostname": "web-server-01",
+    "oldStatus": 1,
+    "newStatus": 3
+  }
+}
+```
+- 主机状态颜色映射：1(健康)=绿色, 2(报警)=黄色, 3(宕机)=红色
 
 ## 2. 资产中心 (Asset Center)
 

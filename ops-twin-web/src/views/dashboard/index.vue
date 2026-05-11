@@ -133,11 +133,38 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 执行状态浮动标签 -->
+    <Transition name="fade">
+      <div v-if="execLabel.visible" class="exec-floating-label" :class="execLabel.cssClass">
+        <span class="exec-label-icon">{{ execLabel.icon }}</span>
+        <span class="exec-label-text">{{ execLabel.text }}</span>
+      </div>
+    </Transition>
+
+    <!-- 浮动小终端：从演练执行页跳转过来时自动弹出 -->
+    <Transition name="fade">
+      <div v-if="miniTerminal.visible" class="mini-terminal">
+        <div class="mini-term-header">
+          <span class="mini-term-title">⚡ {{ miniTerminal.planName }}</span>
+          <span class="mini-term-id">流水 #{{ miniTerminal.recordId }}</span>
+          <div class="mini-term-actions">
+            <el-button link size="small" @click="goFullTerminal">展开全屏</el-button>
+            <el-button link size="small" @click="closeMiniTerminal">✕</el-button>
+          </div>
+        </div>
+        <div class="mini-term-body" ref="miniTerminalRef">
+          <div v-if="miniLogs.length === 0" class="mini-term-wait">⏳ 等待日志流...</div>
+          <div v-for="(line, idx) in miniLogs" :key="idx" class="mini-term-line">{{ line }}</div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, onMounted, onUnmounted, nextTick, watch } from "vue";
+import { useRouter, useRoute } from "vue-router";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import {
@@ -150,6 +177,9 @@ import request from "@/api/request";
 // ==========================================
 // 响应式变量
 // ==========================================
+const router = useRouter();
+const routeObj = useRoute();
+
 const threeContainer = ref<HTMLElement | null>(null); //钩子 拿到html元素进行threejs挂载
 const hostList = ref<any[]>([]); //机子数据
 const cabinetList = ref<any[]>([]); //机柜数据
@@ -158,6 +188,197 @@ const selectedCabinet = ref<any>(null); // 被选中的聚合机柜数据
 const isThermalMode = ref(false);
 const currentView = ref("L1"); // 状态机: L1(全景) -> L2(机柜) -> L3(硬件节点)
 const activeBladeData = ref<any>(null); // L3状态下的刀片节点数据
+
+// ============ 浮动小终端 ============
+const miniTerminal = ref({
+  visible: false,
+  recordId: "",
+  planName: "",
+});
+const miniLogs = ref<string[]>([]);
+const miniTerminalRef = ref<HTMLElement | null>(null);
+let miniWs: WebSocket | null = null;
+
+const openMiniTerminal = (recordId: string, planName: string) => {
+  miniTerminal.value = { visible: true, recordId, planName };
+  miniLogs.value = [];
+  connectMiniWs(recordId);
+  nextTick(() => {
+    miniTerminalRef.value?.scrollTo({ top: 0, behavior: "smooth" });
+  });
+};
+
+const connectMiniWs = (recordId: string) => {
+  if (miniWs) miniWs.close();
+  miniWs = new WebSocket(`ws://localhost:8080/ws/task/log/${recordId}`);
+  miniWs.onmessage = (event) => {
+    miniLogs.value.push(event.data);
+    if (miniLogs.value.length > 100) miniLogs.value.shift();
+    nextTick(() => {
+      const el = miniTerminalRef.value;
+      if (el) el.scrollTop = el.scrollHeight;
+    });
+    // 检测到执行完成，自动切换浮动标签
+    const msg: string = event.data;
+    if (msg.includes('[SUCCESS]')) {
+      hideExecLabel('SUCCESS');
+    } else if (msg.includes('[ERROR]')) {
+      hideExecLabel('FAILED');
+    }
+  };
+};
+
+const closeMiniTerminal = () => {
+  miniTerminal.value.visible = false;
+  if (miniWs) { miniWs.close(); miniWs = null; }
+};
+
+const goFullTerminal = () => {
+  if (miniWs) miniWs.close();
+  // 从日志中推断当前状态
+  let status = '';
+  const allLogs = miniLogs.value.join(' ');
+  if (allLogs.includes('[SUCCESS]')) status = 'SUCCESS';
+  else if (allLogs.includes('用户已终止')) status = 'CANCELLED';
+  else if (allLogs.includes('[ERROR]')) status = 'FAILED';
+  router.push({
+    path: '/tasks/terminal',
+    query: { recordId: miniTerminal.value.recordId, planName: miniTerminal.value.planName, status },
+  });
+};
+
+// ============ 执行状态浮动标签 ============
+const execLabel = ref({
+  visible: false,
+  icon: '',
+  text: '',
+  cssClass: '',
+  type: '' as string,
+});
+let execLabelTimer: ReturnType<typeof setTimeout> | null = null;
+
+const showExecLabel = (planType: string) => {
+  const configs: Record<string, { icon: string; text: string; cssClass: string }> = {
+    DRILL:    { icon: '🟡', text: '演练执行中', cssClass: 'label-drill' },
+    FAILOVER: { icon: '🔴', text: '故障切换中', cssClass: 'label-failover' },
+    SCALE:    { icon: '🟢', text: '扩缩容中',   cssClass: 'label-scale' },
+  };
+  const cfg = configs[planType] || configs.DRILL;
+  execLabel.value = { visible: true, ...cfg, type: planType };
+};
+
+const hideExecLabel = (outcome: string) => {
+  if (outcome === 'SUCCESS' && execLabel.value.type === 'DRILL') {
+    execLabel.value = { visible: true, icon: '✅', text: '演练完成', cssClass: 'label-done', type: '' };
+  } else if (outcome === 'SUCCESS') {
+    execLabel.value = { visible: true, icon: '✅', text: '执行完成', cssClass: 'label-done', type: '' };
+  } else {
+    execLabel.value.visible = false;
+  }
+  if (execLabelTimer) clearTimeout(execLabelTimer);
+  execLabelTimer = setTimeout(() => { execLabel.value.visible = false; }, 3000);
+};
+
+/** 从预案的 steps_json 中提取真实主机名列表（去重 + 过滤 NOTIFY/虚拟节点）并返回 planType */
+const parsePlanTargets = async (recordId: string): Promise<{ targets: string[]; planType: string }> => {
+  try {
+    const recRes: any = await request.get(`/api/task/record/${recordId}`);
+    if (recRes.code !== 200 || !recRes.data?.planId) return { targets: [], planType: '' };
+    const planId = recRes.data.planId;
+
+    const planRes: any = await request.get(`/api/task/plan/${planId}`);
+    if (planRes.code !== 200 || !planRes.data?.stepsJson) return { targets: [], planType: '' };
+    const raw = JSON.parse(planRes.data.stepsJson);
+    const steps = Array.isArray(raw) ? raw : (raw.steps || []);
+
+    const seen = new Set<string>();
+    const notifyTargets = new Set(['SRE-Team', 'DBA-Team', 'ML-Team', 'Search-Team', 'Security-Team', 'All-Staff', 'IDC-A', 'IDC-B']);
+    const targets = steps
+      .filter((s: any) => !s.isLayoutMeta && s.target && !s.target.startsWith('node_') && !notifyTargets.has(s.target))
+      .map((s: any) => s.target)
+      .filter((t: string) => { const dup = seen.has(t); seen.add(t); return !dup; });
+
+    return { targets, planType: planRes.data.planType || 'DRILL' };
+  } catch {
+    return { targets: [], planType: '' };
+  }
+};
+
+/** 计算受影响机柜的包围盒中心，TWEEN 飞相机 + 自动进 L2（单机柜时） */
+const flyToTargetCabinets = (cabIds: string[]) => {
+  // 先恢复所有机柜可见（修复重复执行时不进 L2 的问题）
+  scene.children.forEach((child: any) => {
+    if (child.name === 'hostModel') child.visible = true;
+  });
+
+  const targets: any[] = [];
+  scene.children.forEach((child: any) => {
+    if (child.name === 'hostModel' && cabIds.includes(child.userData?.cabinetId)) {
+      targets.push(child);
+    }
+  });
+  if (targets.length === 0) return;
+
+  let cx = 0, cz = 0;
+  for (const t of targets) { cx += t.position.x; cz += t.position.z; }
+  cx /= targets.length; cz /= targets.length;
+
+  let distance: number;
+  if (targets.length === 1) {
+    distance = getL2Distance(targets[0].userData.maxU || 8);
+    currentView.value = 'L2';
+    activeCabinet = targets[0];
+    selectedCabinet.value = targets[0].userData;
+    scene.children.forEach((child: any) => {
+      if (child.name === 'hostModel' && !targets.includes(child)) child.visible = false;
+    });
+    l1CameraState.position.copy(camera.position);
+    l1CameraState.target.copy(controls.target);
+  } else {
+    distance = targets.length <= 3 ? 12 : 18;
+    currentView.value = 'L1';
+  }
+
+  const from = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+  const toY = targets[0].position.y;
+  const toZ = cz + distance;
+  new TWEEN.Tween(from)
+    .to({ x: cx, y: toY, z: toZ }, 1200)
+    .easing(TWEEN.Easing.Quadratic.InOut)
+    .onUpdate(() => {
+      camera.position.set(from.x, from.y, from.z);
+      controls.target.set(cx, toY, cz);
+    })
+    .start();
+};
+
+// 检查是否从演练执行页跳转过来
+watch(() => routeObj.query, async (q) => {
+  if (q.recordId && q.planName) {
+    const rid = String(q.recordId);
+    const pname = String(q.planName);
+    openMiniTerminal(rid, pname);
+
+    const { targets, planType } = await parsePlanTargets(rid);
+    showExecLabel(planType);
+
+    const affectedCabs = new Set<string>();
+    for (const hostname of targets) {
+      const host = hostList.value.find((h: any) => h.hostname === hostname);
+      if (host?.cabinetId) affectedCabs.add(host.cabinetId);
+    }
+
+    if (affectedCabs.size > 0) {
+      flyToTargetCabinets([...affectedCabs]);
+    }
+
+    if (!isThermalMode.value) {
+      toggleThermalMode();
+    }
+
+    router.replace({ query: {} });
+  }
+}, { immediate: true });
 
 // Three.js 核心对象
 let scene: THREE.Scene;
@@ -230,6 +451,27 @@ const animate = () => {
   frameId = requestAnimationFrame(animate);
   controls.update();
   TWEEN.update();
+
+  // 脉冲动画：演练执行中 status=2/3 的主机 LED 呼吸效果（热力图模式下不干预）
+  if (!isThermalMode.value) {
+    const pulseNow = performance.now();
+    scene.traverse((obj: any) => {
+      if (obj.name === 'bladeServer' && obj.userData?.pulseColor) {
+        const host = obj.userData.parentHost;
+        if (host && (host.status === 2 || host.status === 3)) {
+          const period = host.status === 3 ? 500 : 1500;
+          const start = obj.userData.pulseStart || pulseNow;
+          const phase = ((pulseNow - start) % period) / period;
+          const alpha = 0.35 + 0.65 * Math.abs(Math.sin(phase * Math.PI));
+          obj.userData.ledMat.color.set(obj.userData.pulseColor);
+          obj.userData.ledMat.opacity = alpha;
+          // 整个刀片盒子也呼吸发光
+          obj.material.emissive.set(obj.userData.pulseColor);
+          obj.material.emissiveIntensity = 0.3 + 0.6 * alpha;
+        }
+      }
+    });
+  }
 
   renderer.render(scene, camera);
   labelRenderer.render(scene, camera);
@@ -337,6 +579,8 @@ const createCabinetModel = (
         baseColor,
         slotIndex: i,
         parentHost: host,
+        pulseColor: host.status === 2 || host.status === 3 ? baseColor : null,
+        pulseStart: performance.now(),
       };
       servers.add(server);
     } else {
@@ -589,8 +833,16 @@ const toggleThermalMode = () => {
           server.material.emissive = heatColor;
         } else {
           ledMat.color.set(baseColor);
-          server.material.color.set("#1e293b"); // 恢复刀片原始深灰色
-          server.material.emissive.set("#000");
+          if (server.userData.pulseColor) {
+            // 故障中的主机保持故障颜色
+            server.material.color.set(baseColor);
+            server.material.emissive.set(baseColor);
+            server.material.emissiveIntensity = 0.6;
+          } else {
+            server.material.color.set("#1e293b");
+            server.material.emissive.set("#000");
+            server.material.emissiveIntensity = 0;
+          }
         }
       });
     }
@@ -613,9 +865,83 @@ const handleResize = () => {
   );
 };
 
-onMounted(() => {
+// ============ 3D 联动：监听演练引擎推送的主机状态变更 ============
+let dashboardWs: WebSocket | null = null;
+
+const connectDashboardWs = () => {
+  dashboardWs = new WebSocket("ws://localhost:8080/ws/dashboard/events");
+
+  dashboardWs.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === "HOST_STATUS") {
+        // 更新本地数据
+        const host = hostList.value.find((h: any) => h.id === data.hostId);
+        if (host) {
+          host.status = data.status;
+        }
+        // 更新 3D 场景中的主机颜色
+        updateHostColor(data.hostId, data.status);
+      }
+      if (data.type === 'HOST_STATUS' && data.action === 'DRILL_REVERT') {
+        hideExecLabel('SUCCESS');
+      }
+    } catch (_) { /* 非 JSON 消息忽略 */ }
+  };
+
+  dashboardWs.onclose = () => {
+    // 断线重连
+    setTimeout(connectDashboardWs, 3000);
+  };
+};
+
+
+/** 根据 status 更新 3D 场景中对应主机的 LED 颜色 + 整个刀片盒子发光 + 机柜线框 */
+const updateHostColor = (hostId: number, status: number) => {
+  let color: string;
+  if (status === 2) color = '#faad14';      // 报警 → 黄色
+  else if (status === 3 || status === 0) color = '#ff4d4f'; // 宕机 → 红色
+  else color = '#52c41a';                    // 健康 → 绿色
+
+  scene.traverse((obj: any) => {
+    if (obj.name === 'bladeServer' && obj.userData?.parentHost?.id === hostId) {
+      // 小 LED
+      obj.userData.ledMat.color.set(color);
+      obj.userData.baseColor = color;
+      // 整个刀片盒子变色 + 自发光
+      obj.material.color.set(color);
+      obj.material.emissive.set(color);
+      obj.material.emissiveIntensity = status === 3 ? 0.9 : (status === 2 ? 0.6 : 0);
+      if (status === 2 || status === 3) {
+        obj.userData.pulseColor = color;
+        obj.userData.pulseStart = performance.now();
+      } else {
+        obj.userData.pulseColor = null;
+        obj.material.emissive.set('#000');
+        obj.material.emissiveIntensity = 0;
+      }
+
+      // 机柜线框也跟着变色（L1 全景下也能看到哪个机柜出问题）
+      let parent = obj.parent;
+      while (parent) {
+        if (parent.name === 'hostModel') {
+          parent.children.forEach((child: any) => {
+            if (child.type === 'LineSegments' && child.material?.color) {
+              child.material.color.set(color);
+            }
+          });
+          break;
+        }
+        parent = parent.parent;
+      }
+    }
+  });
+};
+
+onMounted(async () => {
   initThree();
-  fetchAndRenderAssets();
+  await fetchAndRenderAssets();
+  connectDashboardWs();
   // 绑定 pointerdown 和 click，防止拖拽视角的误触
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
   renderer.domElement.addEventListener("click", onCanvasClick);
@@ -624,6 +950,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   cancelAnimationFrame(frameId);
+  if (dashboardWs) dashboardWs.close();
+  if (miniWs) miniWs.close();
   renderer.domElement.removeEventListener("pointerdown", onPointerDown);
   renderer.domElement.removeEventListener("click", onCanvasClick);
   window.removeEventListener("resize", handleResize);
@@ -834,4 +1162,102 @@ onUnmounted(() => {
   opacity: 0;
   transform: scale(0.5);
 }
+
+/* ============ 浮动小终端 ============ */
+.mini-terminal {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 420px;
+  max-height: 320px;
+  background: rgba(2, 5, 8, 0.94);
+  border: 1px solid rgba(0, 229, 255, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 0 30px rgba(0, 229, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+}
+.mini-term-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 229, 255, 0.08);
+  border-bottom: 1px solid rgba(0, 229, 255, 0.15);
+  flex-shrink: 0;
+}
+.mini-term-title {
+  color: #00e5ff;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: "JetBrains Mono", monospace;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mini-term-id {
+  color: #666;
+  font-size: 11px;
+  font-family: "JetBrains Mono", monospace;
+}
+.mini-term-actions {
+  display: flex;
+  gap: 6px;
+  color: #00e5ff;
+  font-size: 12px;
+}
+.mini-term-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #a0b4c8;
+  max-height: 240px;
+}
+.mini-term-body::-webkit-scrollbar {
+  width: 4px;
+}
+.mini-term-body::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.3);
+  border-radius: 2px;
+}
+.mini-term-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.mini-term-wait {
+  color: #666;
+  text-align: center;
+  padding: 20px 0;
+}
+
+.exec-floating-label {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px;
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+  z-index: 90;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  font-weight: 600;
+  box-shadow: 0 0 30px rgba(0,0,0,0.5);
+}
+.exec-label-icon { font-size: 20px; }
+.exec-label-text { letter-spacing: 2px; color: #fff; text-shadow: 0 0 10px rgba(0,0,0,0.5); }
+.label-drill   { background: rgba(250, 173, 20, 0.25); border: 1px solid rgba(250, 173, 20, 0.6); color: #faad14; }
+.label-failover{ background: rgba(255, 77, 79, 0.25); border: 1px solid rgba(255, 77, 79, 0.6); color: #ff4d4f; }
+.label-scale   { background: rgba(82, 196, 26, 0.25); border: 1px solid rgba(82, 196, 26, 0.6); color: #52c41a; }
+.label-done    { background: rgba(82, 196, 26, 0.2); border: 1px solid rgba(82, 196, 26, 0.5); color: #52c41a; }
 </style>

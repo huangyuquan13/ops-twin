@@ -4,13 +4,16 @@ import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.ops.twin.entity.AssetHost;
 import com.ops.twin.entity.AssetService;
 import com.ops.twin.entity.ServiceHostMap;
 import com.ops.twin.entity.TaskPlan;
 import com.ops.twin.entity.TaskRecord;
+import com.ops.twin.mapper.AssetHostMapper;
 import com.ops.twin.mapper.AssetServiceMapper;
 import com.ops.twin.mapper.ServiceHostMapMapper;
 import com.ops.twin.mapper.TaskRecordMapper;
+import com.ops.twin.websocket.DashboardWebSocketHandler;
 import com.ops.twin.websocket.TaskLogWebSocketHandler;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +22,8 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -41,6 +46,9 @@ public class TaskExecutionEngine {
 
     @Autowired
     private ServiceHostMapMapper serviceHostMapMapper;
+
+    @Autowired
+    private AssetHostMapper assetHostMapper;
 
     private static final DateTimeFormatter LOG_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
@@ -141,6 +149,9 @@ public class TaskExecutionEngine {
                 }
             }
 
+            boolean isDrill = "DRILL".equals(plan.getPlanType());
+            Map<Long, Integer> hostRevertMap = new HashMap<>(); // DRILL 模式记录原始状态
+
             int currentExecIndex = 1;
             for (int i = 0; i < steps.size(); i++) {
                 JSONObject step = steps.getJSONObject(i);
@@ -159,12 +170,16 @@ public class TaskExecutionEngine {
                     pushLog(rid, "[WARN]  用户已终止演练任务");
                     pushLog(rid, "[WARN] ═══════════════════════════════════════════");
                     pushLog(rid, "");
+                    revertDrillChanges(hostRevertMap, rid);
                     updateStatus(recordId, "CANCELLED", System.currentTimeMillis() - startMs, "用户手动终止");
                     return;
                 }
 
-                runStep(rid, step, currentExecIndex++, realStepCount);
+                runStep(rid, step, currentExecIndex++, realStepCount, hostRevertMap, isDrill);
             }
+
+            // DRILL 模式：执行完成后恢复所有主机原状态
+            revertDrillChanges(hostRevertMap, rid);
 
             long durationMs = System.currentTimeMillis() - startMs;
             double durationSec = durationMs / 1000.0;
@@ -202,12 +217,68 @@ public class TaskExecutionEngine {
         };
     }
 
-    private void runStep(String rid, JSONObject step, int current, int total) throws InterruptedException {
+    /** 根据 action 映射为目标主机状态：1健康/2报警/3宕机, 返回 null 表示不改变状态 */
+    private Integer statusForAction(String action) {
+        return switch (action) {
+            // 宕机类
+            case "STOP_NODE", "SHUTDOWN_IDC"    -> 3;
+            // 报警类
+            case "INJECT_LOAD", "INJECT_OOM",
+                 "FLUSH_CACHE", "EXHAUST_POOL",
+                 "ENABLE_MAINTENANCE"           -> 2;
+            // 恢复类（只有明确的恢复动作才改状态为健康）
+            case "RESTART_NODE", "PROMOTE_SLAVE",
+                 "FAILOVER_TO", "LOAD_TEST",
+                 "REMOVE_NODE", "SHIFT_TRAFFIC" -> 1;
+            // HEALTH_CHECK / VERIFY_* / MONITOR_* 只是观测，不改变主机状态
+            default                             -> null;
+        };
+    }
+
+    /** 执行单个步骤：查找目标主机 → 更新数据库状态 → 广播给终端 + 3D 大屏 */
+    private void runStep(String rid, JSONObject step, int current, int total,
+                         Map<Long, Integer> hostRevertMap, boolean isDrill)
+            throws InterruptedException {
         String action  = step.getString("action");
         String target  = step.getString("target");
         int    waitMs  = step.getIntValue("waitMs", 1500);
 
         pushLog(rid, String.format("[STEP %d/%d] 正在执行: %s → 目标: %s", current, total, action, target));
+
+        // 查找目标主机
+        AssetHost host = null;
+        if (target != null && !target.isBlank()) {
+            host = assetHostMapper.selectOne(
+                new LambdaQueryWrapper<AssetHost>().eq(AssetHost::getHostname, target));
+        }
+
+        Integer newStatus = statusForAction(action);
+
+        if (host != null && newStatus != null) {
+            Integer oldStatus = host.getStatus();
+            // DRILL 模式：记录原始状态，结束后恢复
+            if (isDrill && !hostRevertMap.containsKey(host.getId())) {
+                hostRevertMap.put(host.getId(), oldStatus);
+            }
+
+            // 更新主机状态
+            host.setStatus(newStatus);
+            assetHostMapper.updateById(host);
+
+            pushLog(rid, String.format("  └─ [联动] %s 状态变更: %d → %d", target, oldStatus, newStatus));
+
+            // 广播 3D 大屏事件
+            String event = String.format(
+                "{\"type\":\"HOST_STATUS\",\"hostId\":%d,\"hostname\":\"%s\",\"status\":%d,\"action\":\"%s\",\"oldStatus\":%d}",
+                host.getId(), host.getHostname(), newStatus, action, oldStatus);
+            DashboardWebSocketHandler.broadcast(event);
+        } else if (host != null && newStatus == null) {
+            // 有目标主机但 action 不改变状态（如 NOTIFY, WAIT）
+            pushLog(rid, String.format("  └─ [联动] %s 状态不变, 当前: %d", target, host.getStatus()));
+        } else if (target != null && host == null) {
+            pushLog(rid, String.format("  └─ [警告] 未找到主机: %s，跳过", target));
+        }
+
         Thread.sleep(waitMs);
         pushLog(rid, String.format("[STEP %d/%d] ✓ 完成", current, total));
     }
@@ -216,6 +287,30 @@ public class TaskExecutionEngine {
         String timestamp = LocalDateTime.now().format(LOG_FMT);
         String line = message.isBlank() ? "" : String.format("[%s] %s", timestamp, message);
         wsHandler.broadcast(recordId, line);
+    }
+
+    /** DRILL 模式下恢复所有被修改的主机状态 */
+    private void revertDrillChanges(Map<Long, Integer> hostRevertMap, String rid) {
+        if (hostRevertMap.isEmpty()) return;
+        pushLog(rid, "");
+        pushLog(rid, "[INFO] ──────────────────────────────────────────────");
+        pushLog(rid, "[INFO] 【DRILL 恢复】正在恢复被演练修改的主机状态...");
+
+        for (Map.Entry<Long, Integer> entry : hostRevertMap.entrySet()) {
+            AssetHost host = assetHostMapper.selectById(entry.getKey());
+            if (host != null) {
+                Integer oldStatus = entry.getValue();
+                host.setStatus(oldStatus);
+                assetHostMapper.updateById(host);
+                pushLog(rid, String.format("  └─ %s 状态恢复: → %d", host.getHostname(), oldStatus));
+
+                String event = String.format(
+                    "{\"type\":\"HOST_STATUS\",\"hostId\":%d,\"hostname\":\"%s\",\"status\":%d,\"action\":\"DRILL_REVERT\"}",
+                    host.getId(), host.getHostname(), oldStatus);
+                DashboardWebSocketHandler.broadcast(event);
+            }
+        }
+        pushLog(rid, "[INFO] DRILL 演练完成，所有主机状态已恢复");
     }
 
     private void updateStatus(Long recordId, String status, Long durationMs, String resultMsg) {
