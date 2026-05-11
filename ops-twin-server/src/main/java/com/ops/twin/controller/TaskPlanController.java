@@ -3,7 +3,9 @@ package com.ops.twin.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ops.twin.common.Result;
+import com.ops.twin.entity.AuditEvent;
 import com.ops.twin.entity.TaskPlan;
+import com.ops.twin.service.AuditEventService;
 import com.ops.twin.service.TaskPlanService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
@@ -20,6 +22,9 @@ public class TaskPlanController {
 
     @Autowired
     private TaskPlanService taskPlanService;
+
+    @Autowired
+    private AuditEventService auditEventService;
 
     /**
      * 分页查询预案列表
@@ -66,7 +71,13 @@ public class TaskPlanController {
             return Result.error("该服务下已存在同名预案：" + plan.getPlanName());
         }
 
+        boolean isNew = plan.getId() == null;
         taskPlanService.saveOrUpdate(plan);
+        AuditEvent audit = new AuditEvent();
+        audit.setOperator("admin");
+        audit.setEventType(isNew ? "CREATE_PLAN" : "UPDATE_PLAN");
+        audit.setDetail((isNew ? "新增预案【" : "编辑预案【") + plan.getPlanName() + "】");
+        auditEventService.save(audit);
         return Result.success(plan);
     }
 
@@ -75,6 +86,14 @@ public class TaskPlanController {
      */
     @DeleteMapping("/delete/{id}")
     public Result<Boolean> delete(@PathVariable Long id) {
+        TaskPlan plan = taskPlanService.getById(id);
+        if (plan != null) {
+            AuditEvent audit = new AuditEvent();
+            audit.setOperator("admin");
+            audit.setEventType("DELETE_PLAN");
+            audit.setDetail("删除预案【" + plan.getPlanName() + "】");
+            auditEventService.save(audit);
+        }
         return Result.success(taskPlanService.removeById(id));
     }
 

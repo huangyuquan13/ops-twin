@@ -81,15 +81,33 @@
 - 说明：根据服务 ID 查询该逻辑服务下绑定的所有物理主机，供演练工作流的目标下拉框使用。
 - 返回：`List<AssetHost>`
 
-## 4. 系统管理 (System Management)
+## 4. 系统管理 (System Management) ✔ Stage 4 已实现
+
 ### 4.1 登录获取令牌
 **接口路径**: `POST /api/auth/login`
 - 说明：验证用户名和密码，返回 Token。
 
-### 4.2 动态菜单查询
-**接口路径**: `GET /api/system/menus`
-- 说明：根据角色返回前端侧边栏树结构，Vue 动态生成路由。
+### 4.2 动态菜单（按角色）
+**接口路径**: `GET /api/system/menus?roleId=1`
+- 说明：根据角色返回菜单树 + 按钮权限码列表。
+- 返回：`{ menus: [...], permissions: ["strategy:add", ...] }`
 
-### 4.3 角色权限配置
-**接口路径**: `POST /api/system/roles/permissions`
-- 说明：配置角色可访问的菜单与按钮权限。
+### 4.3 角色管理 CRUD
+**接口路径**: `GET /api/system/role/list` , `POST /api/system/role/save` , `DELETE /api/system/role/delete/{id}`
+- 说明：角色列表查询、新增/更新、删除（级联删除权限映射）。
+
+### 4.4 角色权限配置
+**接口路径**: `GET /api/system/role/{id}/permissions` , `POST /api/system/role/{id}/permissions`
+- 说明：查询角色的权限 ID 列表 / 保存角色权限（Body: `{ permissionIds: [1,2,3] }`）。
+
+### 4.5 操作审计日志
+**接口路径**: `GET /api/audit/list`
+- Params: `current, size, operator, eventType`
+- 说明：分页查询审计日志（LOGIN / EXECUTE_PLAN / DELETE_PLAN 等类型）。
+
+**接口路径**: `GET /api/audit/types`
+- 说明：返回所有已有的事件类型列表。
+
+**接口路径**: `POST /api/audit/log`
+- Body: `{ operator, eventType, detail }`
+- 说明：手动写入一条审计记录（内部调用）。

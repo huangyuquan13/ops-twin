@@ -16,7 +16,7 @@ ops-twin-server/.env.local
 # === Sensitive files (use .example as template) ===
 ops-twin-server/src/main/resources/application.yml
 ops-twin-server/src/main/resources/application-*.yml
-ops-twin-server/ops_twin_db.sql
+ops-twin-server/ops_twin_db*.sql
 **/secrets/
 **/credentials/
 **/*password*

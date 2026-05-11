@@ -24,10 +24,12 @@
 - [x] **workflow 参数守卫**: `onMounted` 检测无 planId → 跳回任务总览
 - [x] **设定方案联动**: index 点击「设定方案」→ 跳转 strategy 并自动打开新增弹窗
 
-### [ ] Stage 4: 系统管理 (安全与审计)
-- [ ] **用户中心**: 账号、密码、个人资料管理。
-- [ ] **权限配置**: 动态路由菜单、操作按钮级的 RBAC 权限隔离。
-- [ ] **操作审计**: 拦截并记录敏感操作，生成安全审计日志。
+### [x] Stage 4: 系统管理 (安全与审计 - 刚刚完成)
+- [x] **用户中心**: 账号、密码、个人资料管理（`system/user.vue` CRUD + 头像上传 + 按钮权限控制）。
+- [x] **权限配置**: `sys_role` + `sys_role_permission` 两张新表，角色 CRUD + el-tree 权限树勾选分配。`sys_permission` 扩展 type 字段（1=菜单 2=按钮），permission_code 控制按钮级权限。
+- [x] **操作审计**: 6 种事件类型（新增/编辑/删除/执行预案 + 修改角色权限 + 其他），前端列表 + 搜索筛选 + 刷新，操作人改为真实用户名。
+- [x] **按钮级权限**: userStore 存储 permissions + menus（localStorage 持久化），strategy/host/user/index/cabinet 五个页面按钮已接入 v-if 权限控制。
+- [x] **动态侧边栏**: layout 改为从 userStore.menuSections 动态渲染，不同角色看到不同菜单，刷新不丢失。
 
 ## 今日焦点
 详见同目录下的 `today_plan.md`。

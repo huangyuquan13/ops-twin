@@ -1,112 +1,113 @@
 <template>
-  <div class="page-container">
-    <div class="glass-card">
-      <div class="header">
-        <h2 class="title">操作审计</h2>
-        <div class="status-tag">建设中</div>
+  <div class="audit-container">
+    <div class="page-header">
+      <div>
+        <h2>操作审计</h2>
+        <p>记录所有敏感操作，安全可溯源。日志持久化存储在数据库，不会每日清除。</p>
       </div>
-      <div class="content">
-        <div class="placeholder-icon">
-          <div class="pulse-circle"></div>
-        </div>
-        <p class="description">该模块正在高效开发中，敬请期待...</p>
+      <el-button :icon="Refresh" @click="fetchList">刷新</el-button>
+    </div>
+
+    <!-- 搜索栏 -->
+    <div class="search-card">
+      <el-form :inline="true">
+        <el-form-item label="操作人">
+          <el-input v-model.trim="query.operator" placeholder="用户名" clearable />
+        </el-form-item>
+        <el-form-item label="事件类型">
+          <el-select v-model="query.eventType" placeholder="全部" clearable>
+            <el-option v-for="t in eventTypes" :key="t" :label="typeLabel(t)" :value="t" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" @click="fetchList">搜索</el-button>
+          <el-button @click="resetQuery">重置</el-button>
+        </el-form-item>
+      </el-form>
+    </div>
+
+    <!-- 日志表格 -->
+    <div class="table-card">
+      <el-table :data="logList" v-loading="loading" stripe>
+        <el-table-column prop="id" label="ID" width="60" />
+        <el-table-column prop="operator" label="操作人" width="120" />
+        <el-table-column label="事件类型" width="130">
+          <template #default="scope">
+            <el-tag :type="typeTag(scope.row.eventType)" size="small">{{ typeLabel(scope.row.eventType) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="detail" label="详情" min-width="300" show-overflow-tooltip />
+        <el-table-column prop="createTime" label="时间" width="170" />
+      </el-table>
+      <div class="pagination-wrap">
+        <el-pagination
+          v-model:current-page="query.current"
+          v-model:page-size="query.size"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          :total="total"
+          @size-change="fetchList"
+          @current-change="fetchList"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-// 操作审计组件
+import { ref, reactive, onMounted } from 'vue';
+import { Refresh } from '@element-plus/icons-vue';
+import request from '@/api/request';
+
+const loading = ref(false);
+const logList = ref<any[]>([]);
+const total = ref(0);
+const eventTypes = ref<string[]>([]);
+
+const query = reactive({ current: 1, size: 10, operator: '', eventType: '' });
+
+const typeTag = (t: string) => {
+  const map: Record<string, string> = {
+    LOGIN: 'success', EXECUTE_PLAN: 'primary', DELETE_PLAN: 'danger',
+    CREATE_PLAN: 'success', UPDATE_PLAN: 'info', UPDATE_ROLE_PERM: 'warning'
+  };
+  return map[t] || 'info';
+};
+const typeLabel = (t: string) => {
+  const map: Record<string, string> = {
+    LOGIN: '登录', EXECUTE_PLAN: '执行预案', DELETE_PLAN: '删除预案',
+    CREATE_PLAN: '新增预案', UPDATE_PLAN: '编辑预案', UPDATE_ROLE_PERM: '修改权限'
+  };
+  return map[t] || t;
+};
+
+const fetchList = async () => {
+  loading.value = true;
+  try {
+    const res: any = await request.get('/api/audit/list', { params: query });
+    if (res.code === 200) {
+      logList.value = res.data.records;
+      total.value = res.data.total;
+    }
+  } finally { loading.value = false; }
+};
+
+const fetchTypes = async () => {
+  const res: any = await request.get('/api/audit/types');
+  if (res.code === 200) eventTypes.value = res.data;
+};
+
+const resetQuery = () => { query.operator = ''; query.eventType = ''; query.current = 1; fetchList(); };
+
+onMounted(() => { fetchList(); fetchTypes(); });
 </script>
 
 <style scoped>
-.page-container {
-  padding: 24px;
-  height: 100%;
-  min-height: calc(100vh - 120px);
-  background: radial-gradient(circle at top left, #1a1c2e 0%, #0f101a 100%);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.glass-card {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 40px;
-  width: 100%;
-  max-width: 600px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-  animation: fadeIn 0.8s ease-out;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 30px;
-}
-
-.title {
-  font-size: 28px;
-  font-weight: 600;
-  color: #fff;
-  margin: 0;
-  background: linear-gradient(120deg, #409eff, #36cfc9);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.status-tag {
-  background: rgba(64, 158, 255, 0.1);
-  color: #409eff;
-  padding: 4px 12px;
-  border-radius: 20px;
-  font-size: 14px;
-  border: 1px solid rgba(64, 158, 255, 0.2);
-}
-
-.content {
-  text-align: center;
-}
-
-.placeholder-icon {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 30px;
-}
-
-.pulse-circle {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: #409eff;
-  box-shadow: 0 0 0 rgba(64, 158, 255, 0.4);
-  animation: pulse 2s infinite;
-}
-
-.description {
-  color: rgba(255, 255, 255, 0.6);
-  font-size: 16px;
-  letter-spacing: 1px;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 20px rgba(64, 158, 255, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(64, 158, 255, 0);
-  }
-}
+.audit-container { padding: 20px; background: #f5f6fa; min-height: 100%; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; }
+.page-header h2 { margin: 0 0 4px; font-size: 22px; color: #1a1a2e; }
+.page-header p { margin: 0; color: #909399; font-size: 13px; }
+.search-card { background: #fff; padding: 18px 20px 4px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin: 16px 0; }
+.table-card { background: #fff; padding: 16px 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.pagination-wrap { margin-top: 14px; display: flex; justify-content: flex-end; }
 </style>

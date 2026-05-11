@@ -15,4 +15,7 @@ public class SysPermission {
     private String path;
     private String component;
     private String icon;
+    private String permissionCode;
+    private Integer type;
+    private Integer sort;
 }

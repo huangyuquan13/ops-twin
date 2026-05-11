@@ -11,36 +11,16 @@
         active-text-color="#409eff"
         router
       >
-        <!-- 看板中心 -->
-        <el-sub-menu index="1">
-          <template #title><span>看板中心</span></template>
-          <el-menu-item index="/dashboard/index">3D孪生大屏</el-menu-item>
-          <el-menu-item index="/dashboard/analysis">效能大盘分析</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 资产中心 -->
-        <el-sub-menu index="2">
-          <template #title><span>资产中心</span></template>
-          <el-menu-item index="/assets/cabinet">物理机柜台账</el-menu-item>
-          <el-menu-item index="/assets/host">物理服务器台账</el-menu-item>
-          <el-menu-item index="/assets/service">逻辑服务映射</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 任务中心 -->
-        <el-sub-menu index="3">
-          <template #title><span>任务中心</span></template>
-          <el-menu-item index="/tasks/index">任务总览</el-menu-item>
-          <el-menu-item index="/tasks/strategy">预案方案库</el-menu-item>
-          <el-menu-item index="/tasks/terminal">实时监控终端</el-menu-item>
-        </el-sub-menu>
-
-        <!-- 系统管理 -->
-        <el-sub-menu index="4">
-          <template #title><span>系统管理</span></template>
-          <el-menu-item index="/system/user">用户中心</el-menu-item>
-          <el-menu-item index="/system/role">权限配置</el-menu-item>
-          <el-menu-item index="/system/audit">操作审计</el-menu-item>
-        </el-sub-menu>
+        <template v-for="section in topSections" :key="section.id">
+          <el-sub-menu :index="String(section.id)">
+            <template #title><span>{{ section.title }}</span></template>
+            <el-menu-item
+              v-for="item in getChildren(section.id)"
+              :key="item.id"
+              :index="item.path"
+            >{{ item.title }}</el-menu-item>
+          </el-sub-menu>
+        </template>
       </el-menu>
     </el-aside>
 
@@ -85,6 +65,16 @@ import { computed } from 'vue'
 
 const router = useRouter()
 const route = useRoute()
+const userStore = useUserStore()
+
+// 顶层菜单（parentId=0 的 section）
+const topSections = computed(() => {
+  return (userStore.menuSections[0] || []).sort((a: any, b: any) => (a.sort ?? 0) - (b.sort ?? 0))
+})
+
+const getChildren = (parentId: number) => {
+  return (userStore.menuSections[parentId] || []).sort((a: any, b: any) => (a.sort ?? 0) - (b.sort ?? 0))
+}
 
 // 动态高亮：/tasks/workflow 无独立菜单项 → 回退到 /tasks/strategy
 const activeMenu = computed(() => {
@@ -94,16 +84,21 @@ const activeMenu = computed(() => {
 })
 
 // 路径属于哪个 sub-menu 就展开哪个
-const menuIndex = computed(() => {
+const defaultOpeneds = computed(() => {
   const p = route.path
+  // 从 flat menus 中找当前路径对应的 section id
+  for (const m of userStore.menus) {
+    if (m.path === p && m.parentId && m.parentId > 0) {
+      return [String(m.parentId)]
+    }
+  }
+  // fallback：根据路径前缀匹配
   if (p.startsWith('/dashboard')) return ['1']
   if (p.startsWith('/assets'))   return ['2']
   if (p.startsWith('/tasks'))    return ['3']
   if (p.startsWith('/system'))   return ['4']
-  return ['1']
+  return []
 })
-const defaultOpeneds = computed(() => menuIndex.value)
-const userStore = useUserStore()
 
 // 我们可以直接在模板中使用 userStore.avatarUrl 了，无需在每个组件里写一遍拼接逻辑
 

@@ -74,10 +74,18 @@ const handleLogin = async () => {
   try {
     const res: any = await request.post('/api/auth/login', loginForm.value)
     localStorage.setItem('token', res.data.token)
-    
-    // 把用户信息扔给 Store 就行了，它内部会自动持久化到硬盘，组件不操心
     userStore.setUserInfo(res.data.user)
-    
+
+    // 拉取角色对应的权限
+    const roleId = res.data.user?.roleId || 1
+    try {
+      const permRes: any = await request.get('/api/system/menus', { params: { roleId } })
+      if (permRes.code === 200) {
+        userStore.setPermissions(permRes.data.permissions || [])
+        userStore.setMenus(permRes.data.menus || [])
+      }
+    } catch { /* 降级：权限为空 */ }
+
     ElMessage.success('身份验证成功，正在同步孪生空间...')
     router.push('/')
   } catch (err) {

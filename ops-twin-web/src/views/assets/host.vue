@@ -6,7 +6,7 @@
         <p class="page-desc">管理机房物理服务器、架式设备及其 3D 空间坐标</p>
       </div>
       <div class="action-section">
-        <el-button type="primary" :icon="Plus" @click="handleAdd"
+        <el-button v-if="userStore.hasPerm('host:add')" type="primary" :icon="Plus" @click="handleAdd"
           >新增资产</el-button
         >
         <el-button :icon="Refresh" @click="fetchList">刷新</el-button>
@@ -77,10 +77,10 @@
 
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="handleEdit(scope.row)"
+            <el-button v-if="userStore.hasPerm('host:edit')" link type="primary" @click="handleEdit(scope.row)"
               >编辑</el-button
             >
-            <el-button link type="danger" @click="handleDelete(scope.row)"
+            <el-button v-if="userStore.hasPerm('host:delete')" link type="danger" @click="handleDelete(scope.row)"
               >删除</el-button
             >
           </template>
@@ -200,7 +200,9 @@
 import { ref, onMounted, reactive } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
-import request from "@/api/request"; // 引入您的拦截器实例
+import request from "@/api/request";
+import { useUserStore } from '@/store/user';
+const userStore = useUserStore();
 
 // 数据列表状态
 const loading = ref(false);

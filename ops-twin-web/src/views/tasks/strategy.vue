@@ -7,7 +7,7 @@
         <p class="page-desc">管理容灾演练预案，与逻辑服务深度绑定，驱动自动化故障模拟与自愈</p>
       </div>
       <div class="header-right">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增预案</el-button>
+        <el-button v-if="userStore.hasPerm('strategy:add')" type="primary" :icon="Plus" @click="handleAdd">新增预案</el-button>
         <el-button :icon="Refresh" @click="fetchList">刷新</el-button>
       </div>
     </div>
@@ -78,11 +78,15 @@
         <el-table-column label="状态" width="100" align="center">
           <template #default="scope">
             <el-switch
+              v-if="userStore.hasPerm('strategy:toggle')"
               v-model="scope.row.status"
               :active-value="1"
               :inactive-value="0"
               @change="toggleStatus(scope.row)"
             />
+            <span v-else :style="{ color: scope.row.status === 1 ? '#67c23a' : '#909399' }">
+              {{ scope.row.status === 1 ? '启用' : '禁用' }}
+            </span>
           </template>
         </el-table-column>
 
@@ -98,12 +102,12 @@
           <template #default="{ row }">
             <div class="action-buttons">
               <div class="action-row">
-                <el-button link type="primary" :icon="Operation" @click="handleWorkflow(row)">编排</el-button>
-                <el-button link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:workflow')" link type="primary" :icon="Operation" @click="handleWorkflow(row)">编排</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:edit')" link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
               </div>
               <div class="action-row">
-                <el-button link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
-                <el-button link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:execute')" link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:delete')" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
               </div>
             </div>
           </template>
@@ -204,9 +208,11 @@ import { useRouter, useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh, Operation, Edit, Delete } from '@element-plus/icons-vue';
 import request from '@/api/request';
+import { useUserStore } from '@/store/user';
 
-const router   = useRouter();
-const routeObj = useRoute();
+const router    = useRouter();
+const routeObj  = useRoute();
+const userStore = useUserStore();
 
 // ============ 状态定义 ============
 const loading        = ref(false);
@@ -361,7 +367,7 @@ const handleRun = (row: any) => {
     runLoading.value[row.id] = true;
     try {
       const res: any = await request.post(`/api/task/record/trigger/${row.id}`, null, {
-        params: { operator: 'admin' }
+        params: { operator: userStore.userInfo.username || 'admin' }
       });
       if (res.code === 200) {
         const { recordId, planName } = res.data;

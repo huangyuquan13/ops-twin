@@ -3,8 +3,10 @@ package com.ops.twin.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ops.twin.common.Result;
+import com.ops.twin.entity.AuditEvent;
 import com.ops.twin.entity.TaskPlan;
 import com.ops.twin.entity.TaskRecord;
+import com.ops.twin.service.AuditEventService;
 import com.ops.twin.service.TaskPlanService;
 import com.ops.twin.service.TaskRecordService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -26,6 +28,9 @@ public class TaskRecordController {
 
     @Autowired
     private TaskPlanService taskPlanService;
+
+    @Autowired
+    private AuditEventService auditEventService;
 
     /**
      * 触发演练预案执行
@@ -53,7 +58,14 @@ public class TaskRecordController {
         // 2. 触发异步引擎，获取 recordId
         Long recordId = taskRecordService.triggerAsync(plan, operator);
 
-        // 3. 返回 recordId 及 WebSocket 订阅路径（供前端直接拼接连接）
+        // 3. 记录审计日志
+        AuditEvent audit = new AuditEvent();
+        audit.setOperator(operator);
+        audit.setEventType("EXECUTE_PLAN");
+        audit.setDetail("执行预案【" + plan.getPlanName() + "】，流水 ID：" + recordId);
+        auditEventService.save(audit);
+
+        // 4. 返回 recordId 及 WebSocket 订阅路径
         return Result.success(Map.of(
             "recordId",   recordId,
             "wsPath",     "/ws/task/log/" + recordId,

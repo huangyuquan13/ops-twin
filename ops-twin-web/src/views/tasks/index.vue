@@ -29,7 +29,7 @@
     <div class="table-card">
       <div class="table-header">
         <h3 class="table-title">演练预案</h3>
-        <el-button type="primary" :icon="Plus" @click="goToStrategyAdd">设定方案</el-button>
+        <el-button v-if="userStore.hasPerm('strategy:add')" type="primary" :icon="Plus" @click="goToStrategyAdd">设定方案</el-button>
       </div>
       <el-table :data="planList" v-loading="loading" stripe>
         <el-table-column prop="planName" label="预案名称" min-width="160" />
@@ -61,10 +61,10 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" :icon="Edit" @click="handleWorkflow(row)" :disabled="row.status !== 1">
+            <el-button v-if="userStore.hasPerm('strategy:workflow')" link type="primary" :icon="Edit" @click="handleWorkflow(row)" :disabled="row.status !== 1">
               编排
             </el-button>
-            <el-button link type="success" :loading="runLoading[row.id]" @click="handleRun(row)" :disabled="row.status !== 1">
+            <el-button v-if="userStore.hasPerm('strategy:execute')" link type="success" :loading="runLoading[row.id]" @click="handleRun(row)" :disabled="row.status !== 1">
               执行
             </el-button>
           </template>
@@ -92,8 +92,10 @@ import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Edit } from '@element-plus/icons-vue';
 import request from '@/api/request';
+import { useUserStore } from '@/store/user';
 
-const router = useRouter();
+const router    = useRouter();
+const userStore = useUserStore();
 
 const loading = ref(false);
 const planList = ref<any[]>([]);
@@ -174,7 +176,7 @@ const handleRun = (row: any) => {
     runLoading.value[row.id] = true;
     try {
       const res: any = await request.post(`/api/task/record/trigger/${row.id}`, null, {
-        params: { operator: 'admin' }
+        params: { operator: userStore.userInfo.username || 'admin' }
       });
       if (res.code === 200) {
         const { recordId, planName } = res.data;

@@ -20,7 +20,7 @@
         </el-form-item>
       </el-form>
       <div class="action-bar">
-        <el-button type="success" @click="handleAdd">
+        <el-button v-if="userStore.hasPerm('cabinet:add')" type="success" @click="handleAdd">
           <el-icon><Plus /></el-icon> 新增机柜
         </el-button>
         <el-button @click="fetchList">
@@ -52,8 +52,8 @@
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="scope">
-            <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(scope.row)">删除</el-button>
+            <el-button v-if="userStore.hasPerm('cabinet:edit')" link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+            <el-button v-if="userStore.hasPerm('cabinet:delete')" link type="danger" @click="handleDelete(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -112,6 +112,8 @@ import { ref, reactive, onMounted } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Plus, Refresh } from "@element-plus/icons-vue";
 import request from "@/api/request";
+import { useUserStore } from '@/store/user';
+const userStore = useUserStore();
 
 const loading = ref(false);
 const cabinetList = ref<any[]>([]);

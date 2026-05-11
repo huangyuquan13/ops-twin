@@ -6,7 +6,7 @@
         <p class="page-desc">管理系统登录人员、分配角色与头像</p>
       </div>
       <div class="action-section">
-        <el-button type="primary" :icon="Plus" @click="handleAdd">新增用户</el-button>
+        <el-button v-if="userStore.hasPerm('user:add')" type="primary" :icon="Plus" @click="handleAdd">新增用户</el-button>
         <el-button :icon="Refresh" @click="fetchList">刷新</el-button>
       </div>
     </div>
@@ -56,8 +56,8 @@
         
         <el-table-column label="操作" width="160" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-            <el-button link type="danger" @click="handleDelete(scope.row)">删除</el-button>
+            <el-button v-if="userStore.hasPerm('user:edit')" link type="primary" @click="handleEdit(scope.row)">编辑</el-button>
+            <el-button v-if="userStore.hasPerm('user:delete')" link type="danger" @click="handleDelete(scope.row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

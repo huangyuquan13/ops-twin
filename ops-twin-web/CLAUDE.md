@@ -47,8 +47,9 @@ src/
       workflow.vue      # Visual step editor (param-gated via onMounted) (real)
       terminal.vue      # Real-time log console (WebSocket + Xterm dark theme) (real)
     system/
-      user.vue          # User CRUD with avatar upload (real)
-      role/audit        # Placeholders
+      user.vue          # User CRUD + avatar + button permission control (real)
+      role.vue          # Role list + el-tree permission assignment (real)
+      audit.vue         # Audit log table + search filter (real)
 ```
 
 ## Key Pages & Interactions
@@ -65,6 +66,7 @@ src/
 - All UI text is in Chinese
 - Dark theme with sci-fi aesthetic for dashboard/terminal; light theme for CRUD pages
 - No ESLint/Prettier configured — rely on TypeScript strict flags
+- Button-level RBAC: `v-if="userStore.hasPerm('strategy:add')"` on action buttons, permissions loaded at login via `GET /api/system/menus?roleId=`
 - API calls go through the shared Axios instance in `api/request.ts`
 - Vue Flow pages must import CSS: `@vue-flow/core/dist/style.css` + theme/controls/minimap CSS
 
