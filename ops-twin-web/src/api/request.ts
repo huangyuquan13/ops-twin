@@ -2,7 +2,7 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 const service = axios.create({
-    baseURL: 'http://localhost:8080', // 后端地址
+    baseURL: import.meta.env.VITE_API_BASE, // 开发=localhost:8080, 生产=相对路径走Nginx
     timeout: 5000
 })
 // 请求拦截器

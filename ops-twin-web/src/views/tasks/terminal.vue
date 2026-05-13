@@ -134,7 +134,7 @@ const connectWs = () => {
   if (!recordId.value) return;
 
   // 拼接 WebSocket 地址（开发环境指向后端 8080）
-  const wsUrl = `ws://localhost:8080/ws/task/log/${recordId.value}`;
+  const wsUrl = `${import.meta.env.VITE_WS_BASE}/ws/task/log/${recordId.value}`;
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {

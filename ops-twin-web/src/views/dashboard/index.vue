@@ -211,7 +211,7 @@ const openMiniTerminal = (recordId: string, planName: string) => {
 
 const connectMiniWs = (recordId: string) => {
   if (miniWs) miniWs.close();
-  miniWs = new WebSocket(`ws://localhost:8080/ws/task/log/${recordId}`);
+  miniWs = new WebSocket(`${import.meta.env.VITE_WS_BASE}/ws/task/log/${recordId}`);
   miniWs.onmessage = (event) => {
     miniLogs.value.push(event.data);
     if (miniLogs.value.length > 100) miniLogs.value.shift();
@@ -925,7 +925,7 @@ const handleResize = () => {
 let dashboardWs: WebSocket | null = null;
 
 const connectDashboardWs = () => {
-  dashboardWs = new WebSocket("ws://localhost:8080/ws/dashboard/events");
+  dashboardWs = new WebSocket(`${import.meta.env.VITE_WS_BASE}/ws/dashboard/events`);
 
   dashboardWs.onmessage = (event) => {
     try {

@@ -162,7 +162,7 @@ const getAvatarUrl = (path: string) => {
   if (!path) return ''
   // 假设后端运行在 8080 端口，且静态资源映射配置已生效
   // 注意：在正式生产环境中，这里应该是一个域名或者通过环境变量配置
-  return `http://localhost:8080${path}`
+  return `${import.meta.env.VITE_API_BASE}${path}`
 }
 
 // =======================
