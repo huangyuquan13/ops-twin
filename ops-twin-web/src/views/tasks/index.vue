@@ -182,7 +182,7 @@ const handleRun = (row: any) => {
         const { recordId, planName } = res.data;
         ElMessage.success(`引擎已启动，流水 #${recordId}`);
         router.push({
-          path: '/tasks/terminal',
+          path: '/dashboard/index',
           query: { recordId: String(recordId), planName }
         });
       }

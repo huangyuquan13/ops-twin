@@ -106,7 +106,8 @@
                 <el-button v-if="userStore.hasPerm('strategy:edit')" link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
               </div>
               <div class="action-row">
-                <el-button v-if="userStore.hasPerm('strategy:execute')" link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:execute') && row.status === 1" link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:execute') && row.planType !== 'DRILL' && row.status === 0" link type="warning" :loading="resetLoading[row.id]" @click="handlePlanReset(row)">重置</el-button>
                 <el-button v-if="userStore.hasPerm('strategy:delete')" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
               </div>
             </div>
@@ -220,6 +221,7 @@ const planList       = ref<any[]>([]);
 const total          = ref(0);
 const serviceOptions = ref<any[]>([]);
 const runLoading     = ref<Record<number, boolean>>({});  // 每行独立 loading 状态，防重复点击
+const resetLoading   = ref<Record<number, boolean>>({});
 
 const queryParams = reactive({
   current:   1,
@@ -384,6 +386,21 @@ const handleRun = (row: any) => {
       runLoading.value[row.id] = false;
     }
   }).catch(() => {});
+};
+
+const handlePlanReset = async (row: any) => {
+  resetLoading.value[row.id] = true;
+  try {
+    const res: any = await request.post(`/api/task/plan/reset/${row.id}`);
+    if (res.code === 200) {
+      ElMessage.success(res.data || '重置成功');
+      fetchList();
+    } else {
+      ElMessage.error(res.message || '重置失败');
+    }
+  } finally {
+    resetLoading.value[row.id] = false;
+  }
 };
 
 // ============ 工具函数 ============

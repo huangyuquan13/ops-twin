@@ -11,6 +11,7 @@
         <span class="topbar-meta" v-if="planName">预案：{{ planName }}</span>
         <span class="topbar-meta" v-if="recordId">流水 #{{ recordId }}</span>
         <el-button size="small" :icon="ArrowLeft" @click="goToIndex">总览</el-button>
+        <el-button v-if="hasDashboardState" size="small" type="primary" @click="backToDashboard">返回大屏</el-button>
         <el-button size="small" :icon="ArrowLeft" @click="goToStrategy">方案库</el-button>
         <el-button
           v-if="recordId && (runStatus === 'RUNNING' || runStatus === 'PENDING')"
@@ -86,6 +87,7 @@ const routeObj = useRoute();
 const recordId = ref<string>(routeObj.query.recordId as string || '');
 const planName = ref<string>(routeObj.query.planName as string || '');
 const initialStatus = ref<string>(routeObj.query.status as string || '');
+const hasDashboardState = ref(!!sessionStorage.getItem('dashboardState'));
 
 // ============ 终端状态 ============
 const logs       = ref<string[]>([]);
@@ -125,6 +127,9 @@ const statusLabel = computed(() => ({
 }[runStatus.value] ?? runStatus.value));
 
 // ============ 连接 WebSocket ============
+let wsRetryCount = 0;
+const MAX_WS_RETRY = 3;
+
 const connectWs = () => {
   if (!recordId.value) return;
 
@@ -133,6 +138,7 @@ const connectWs = () => {
   ws = new WebSocket(wsUrl);
 
   ws.onopen = () => {
+    wsRetryCount = 0;
     isConnected.value = true;
     runStatus.value   = 'RUNNING';
     startProgressSimulation();
@@ -161,8 +167,9 @@ const connectWs = () => {
 
   ws.onclose = () => {
     isConnected.value = false;
-    // 如果还未得到最终状态，做一次状态轮询
     if (runStatus.value === 'RUNNING' || runStatus.value === 'PENDING') {
+      if (wsRetryCount < MAX_WS_RETRY) { wsRetryCount++; setTimeout(connectWs, 3000); }
+      else { logs.value.push('[SYSTEM] WebSocket 连接中断，已停止重连，请刷新页面'); }
       pollFinalStatus();
     }
   };
@@ -244,7 +251,7 @@ const colorize = (line: string) => {
 };
 
 // ============ 清屏 ============
-const clearLogs = () => { logs.value = []; };
+const clearLogs = () => { logs.value = []; sessionStorage.removeItem('dashboardState'); hasDashboardState.value = false; };
 
 // ============ 终止命令 ============
 const handleTerminate = async () => {
@@ -280,6 +287,7 @@ const goToStrategy = () => {
   if (ws) ws.close();
   router.push('/tasks/strategy');
 };
+const backToDashboard = () => { router.push('/dashboard/index'); };
 
 // ============ 生命周期 ============
 onMounted(async () => {
@@ -287,6 +295,19 @@ onMounted(async () => {
   if (!recordId.value) {
     logs.value.push('[SYSTEM] 未指定任务流水 ID，请从预案方案库执行演练后自动跳转');
     return;
+  }
+
+  if (hasDashboardState.value) {
+    const saved = sessionStorage.getItem('dashboardState');
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        if (state.miniTerm?.logs?.length) {
+          logs.value = state.miniTerm.logs;
+          nextTick(() => scrollToBottom());
+        }
+      } catch (_) {}
+    }
   }
 
   // 如果从浮动终端传来已知终态，直接显示

@@ -12,6 +12,7 @@ import com.ops.twin.entity.TaskRecord;
 import com.ops.twin.mapper.AssetHostMapper;
 import com.ops.twin.mapper.AssetServiceMapper;
 import com.ops.twin.mapper.ServiceHostMapMapper;
+import com.ops.twin.mapper.TaskPlanMapper;
 import com.ops.twin.mapper.TaskRecordMapper;
 import com.ops.twin.websocket.DashboardWebSocketHandler;
 import com.ops.twin.websocket.TaskLogWebSocketHandler;
@@ -49,6 +50,9 @@ public class TaskExecutionEngine {
 
     @Autowired
     private AssetHostMapper assetHostMapper;
+
+    @Autowired
+    private TaskPlanMapper planMapper;
 
     private static final DateTimeFormatter LOG_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS");
 
@@ -175,11 +179,20 @@ public class TaskExecutionEngine {
                     return;
                 }
 
-                runStep(rid, step, currentExecIndex++, realStepCount, hostRevertMap, isDrill);
+                runStep(rid, step, currentExecIndex++, realStepCount, hostRevertMap, isDrill, plan);
             }
 
             // DRILL 模式：执行完成后恢复所有主机原状态
             revertDrillChanges(hostRevertMap, rid);
+
+            // FAILOVER / SCALE 执行后禁用预案
+            if (!isDrill) {
+                TaskPlan disablePlan = new TaskPlan();
+                disablePlan.setId(plan.getId());
+                disablePlan.setStatus(0);
+                planMapper.updateById(disablePlan);
+                pushLog(rid, "[INFO] 预案已自动禁用，请通过【重置】恢复");
+            }
 
             long durationMs = System.currentTimeMillis() - startMs;
             double durationSec = durationMs / 1000.0;
@@ -237,7 +250,7 @@ public class TaskExecutionEngine {
 
     /** 执行单个步骤：查找目标主机 → 更新数据库状态 → 广播给终端 + 3D 大屏 */
     private void runStep(String rid, JSONObject step, int current, int total,
-                         Map<Long, Integer> hostRevertMap, boolean isDrill)
+                         Map<Long, Integer> hostRevertMap, boolean isDrill, TaskPlan plan)
             throws InterruptedException {
         String action  = step.getString("action");
         String target  = step.getString("target");
@@ -264,6 +277,40 @@ public class TaskExecutionEngine {
             // 更新主机状态
             host.setStatus(newStatus);
             assetHostMapper.updateById(host);
+
+            // FAILOVER/SCALE 真实服务绑定操作
+            Long svcId = plan.getServiceId();
+            if (svcId != null) {
+                switch (action) {
+                    case "STOP_NODE", "SHUTDOWN_IDC" -> {
+                        LambdaQueryWrapper<ServiceHostMap> delW = new LambdaQueryWrapper<>();
+                        delW.eq(ServiceHostMap::getServiceId, svcId).eq(ServiceHostMap::getHostId, host.getId());
+                        if (serviceHostMapMapper.delete(delW) > 0) {
+                            pushLog(rid, "  └─ [绑定] " + target + " 已从服务解绑");
+                        }
+                    }
+                    case "PROMOTE_SLAVE", "FAILOVER_TO" -> {
+                        LambdaQueryWrapper<ServiceHostMap> checkW = new LambdaQueryWrapper<>();
+                        checkW.eq(ServiceHostMap::getServiceId, svcId).eq(ServiceHostMap::getHostId, host.getId());
+                        if (serviceHostMapMapper.selectCount(checkW) == 0) {
+                            ServiceHostMap map = new ServiceHostMap();
+                            map.setServiceId(svcId);
+                            map.setHostId(host.getId());
+                            serviceHostMapMapper.insert(map);
+                            pushLog(rid, "  └─ [绑定] " + target + " 已接管服务挂载");
+                        }
+                    }
+                    case "REMOVE_NODE" -> {
+                        LambdaQueryWrapper<ServiceHostMap> delW = new LambdaQueryWrapper<>();
+                        delW.eq(ServiceHostMap::getServiceId, svcId).eq(ServiceHostMap::getHostId, host.getId());
+                        if (serviceHostMapMapper.delete(delW) > 0) {
+                            pushLog(rid, "  └─ [绑定] " + target + " 已从服务移除");
+                        }
+                        host.setStatus(0); // 离线
+                        assetHostMapper.updateById(host);
+                    }
+                }
+            }
 
             pushLog(rid, String.format("  └─ [联动] %s 状态变更: %d → %d", target, oldStatus, newStatus));
 

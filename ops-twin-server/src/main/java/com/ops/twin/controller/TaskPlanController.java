@@ -1,11 +1,20 @@
 package com.ops.twin.controller;
 
+import com.alibaba.fastjson2.JSON;
+import com.alibaba.fastjson2.JSONArray;
+import com.alibaba.fastjson2.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.ops.twin.audit.AuditLog;
 import com.ops.twin.common.Result;
+import com.ops.twin.entity.AssetHost;
+import com.ops.twin.entity.AssetService;
 import com.ops.twin.entity.AuditEvent;
+import com.ops.twin.entity.ServiceHostMap;
 import com.ops.twin.entity.TaskPlan;
+import com.ops.twin.mapper.AssetHostMapper;
+import com.ops.twin.mapper.AssetServiceMapper;
+import com.ops.twin.mapper.ServiceHostMapMapper;
 import com.ops.twin.service.AuditEventService;
 import com.ops.twin.service.TaskPlanService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,6 +34,15 @@ public class TaskPlanController {
 
     @Autowired
     private AuditEventService auditEventService;
+
+    @Autowired
+    private AssetHostMapper assetHostMapper;
+
+    @Autowired
+    private ServiceHostMapMapper serviceHostMapMapper;
+
+    @Autowired
+    private AssetServiceMapper assetServiceMapper;
 
     /**
      * 分页查询预案列表
@@ -113,5 +131,61 @@ public class TaskPlanController {
         if (plan == null) return Result.error("预案不存在");
         plan.setStatus(plan.getStatus() == 1 ? 0 : 1);
         return Result.success(taskPlanService.updateById(plan));
+    }
+
+    /**
+     * 重置预案执行环境：恢复主机状态 + 重建服务绑定 + 重新启用预案
+     * POST /api/task/plan/reset/{planId}
+     */
+    @PostMapping("/reset/{planId}")
+    public Result<String> reset(@PathVariable Long planId) {
+        TaskPlan plan = taskPlanService.getById(planId);
+        if (plan == null) return Result.error("预案不存在");
+        if (!"FAILOVER".equals(plan.getPlanType()) && !"SCALE".equals(plan.getPlanType())) {
+            return Result.error("仅故障切换和扩缩容预案需要重置");
+        }
+
+        Long svcId = plan.getServiceId();
+        int restoredHosts = 0;
+        if (svcId != null) {
+            AssetService svc = assetServiceMapper.selectById(svcId);
+            if (svc != null && svc.getTopologyJson() != null) {
+                Object raw = JSON.parse(svc.getTopologyJson());
+                JSONArray arr = raw instanceof JSONArray ? (JSONArray) raw : null;
+                if (arr != null && !arr.isEmpty()) {
+                    // 删旧绑定
+                    LambdaQueryWrapper<ServiceHostMap> delW = new LambdaQueryWrapper<>();
+                    delW.eq(ServiceHostMap::getServiceId, svcId);
+                    serviceHostMapMapper.delete(delW);
+
+                    // 从 topology 重建绑定 + 恢复主机
+                    for (int i = 0; i < arr.size(); i++) {
+                        JSONObject node = arr.getJSONObject(i);
+                        if (node == null) continue;
+                        if ("edge".equals(node.getString("type"))) continue;
+                        JSONObject data = node.getJSONObject("data");
+                        if (data == null) continue;
+                        Long hostId = data.getLong("hostId");
+                        if (hostId == null) continue;
+
+                        ServiceHostMap map = new ServiceHostMap();
+                        map.setServiceId(svcId);
+                        map.setHostId(hostId);
+                        serviceHostMapMapper.insert(map);
+
+                        AssetHost host = assetHostMapper.selectById(hostId);
+                        if (host != null && host.getStatus() != 1) {
+                            host.setStatus(1);
+                            assetHostMapper.updateById(host);
+                            restoredHosts++;
+                        }
+                    }
+                }
+            }
+        }
+        plan.setStatus(1);
+        taskPlanService.updateById(plan);
+
+        return Result.success("已重置，恢复 " + restoredHosts + " 台主机，重建服务绑定");
     }
 }

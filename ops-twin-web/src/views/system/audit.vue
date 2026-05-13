@@ -15,7 +15,7 @@
           <el-input v-model.trim="query.operator" placeholder="用户名" clearable />
         </el-form-item>
         <el-form-item label="事件类型">
-          <el-select v-model="query.eventType" placeholder="全部" clearable>
+          <el-select v-model="query.eventType" placeholder="全部" clearable style="width: 180px">
             <el-option v-for="t in eventTypes" :key="t" :label="typeLabel(t)" :value="t" />
           </el-select>
         </el-form-item>

@@ -235,7 +235,20 @@ const closeMiniTerminal = () => {
 
 const goFullTerminal = () => {
   if (miniWs) miniWs.close();
-  // 从日志中推断当前状态
+  const cabinetId = activeCabinet?.userData?.cabinetId || '';
+  sessionStorage.setItem('dashboardState', JSON.stringify({
+    view: currentView.value,
+    cabinetId,
+    thermalOn: isThermalMode.value,
+    camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+    camTarget: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
+    miniTerm: {
+      recordId: miniTerminal.value.recordId,
+      planName: miniTerminal.value.planName,
+      planType: execLabel.value.type,
+      logs: [...miniLogs.value],
+    },
+  }));
   let status = '';
   const allLogs = miniLogs.value.join(' ');
   if (allLogs.includes('[SUCCESS]')) status = 'SUCCESS';
@@ -823,14 +836,21 @@ const toggleThermalMode = () => {
 
         const { usage, ledMat, baseColor } = server.userData;
         if (isThermalMode.value) {
-          const heatColor = new THREE.Color().setHSL(
-            (100 - usage) / 360,
-            1,
-            0.5,
-          );
-          ledMat.color.copy(heatColor);
-          server.material.color.set(heatColor);
-          server.material.emissive = heatColor;
+          // 故障/报警中的主机不受热力图影响，保持真实状态色
+          if (server.userData.pulseColor) {
+            ledMat.color.set(server.userData.pulseColor);
+            server.material.color.set(server.userData.pulseColor);
+            server.material.emissive.set(server.userData.pulseColor);
+          } else {
+            const heatColor = new THREE.Color().setHSL(
+              (100 - usage) / 360,
+              1,
+              0.5,
+            );
+            ledMat.color.copy(heatColor);
+            server.material.color.set(heatColor);
+            server.material.emissive = heatColor;
+          }
         } else {
           ledMat.color.set(baseColor);
           if (server.userData.pulseColor) {
@@ -942,6 +962,21 @@ onMounted(async () => {
   initThree();
   await fetchAndRenderAssets();
   connectDashboardWs();
+  const saved = sessionStorage.getItem('dashboardState');
+  if (saved) {
+    try {
+      const state = JSON.parse(saved);
+      sessionStorage.removeItem('dashboardState');
+      setTimeout(() => {
+        if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
+        if (state.view === 'L2' && state.cabinetId) flyToTargetCabinets([state.cabinetId]);
+        if (state.miniTerm?.recordId) {
+          openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName);
+          miniLogs.value = state.miniTerm.logs || [];
+        }
+      }, 800);
+    } catch (_) {}
+  }
   // 绑定 pointerdown 和 click，防止拖拽视角的误触
   renderer.domElement.addEventListener("pointerdown", onPointerDown);
   renderer.domElement.addEventListener("click", onCanvasClick);
