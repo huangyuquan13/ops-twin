@@ -356,6 +356,7 @@ const toggleStatus = async (row: any) => {
 
 // ============ 执行预案 ============
 const handleRun = (row: any) => {
+  sessionStorage.removeItem('dashboardState');
   ElMessageBox.confirm(
     `即将触发演练预案【${row.planName}】，确认执行？\n\n执行后将自动跳转至实时监控终端。`,
     '执行确认',
@@ -395,6 +396,7 @@ const handlePlanReset = async (row: any) => {
     if (res.code === 200) {
       ElMessage.success(res.data || '重置成功');
       fetchList();
+      sessionStorage.removeItem('dashboardState');
     } else {
       ElMessage.error(res.message || '重置失败');
     }

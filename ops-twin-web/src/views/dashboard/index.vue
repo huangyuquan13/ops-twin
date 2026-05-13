@@ -198,6 +198,7 @@ const miniTerminal = ref({
 const miniLogs = ref<string[]>([]);
 const miniTerminalRef = ref<HTMLElement | null>(null);
 let miniWs: WebSocket | null = null;
+let lastExecCabinetId = '';  // 记死执行目标的机柜，goBack 回 L1 后也不丢
 
 const openMiniTerminal = (recordId: string, planName: string) => {
   miniTerminal.value = { visible: true, recordId, planName };
@@ -229,8 +230,17 @@ const connectMiniWs = (recordId: string) => {
 };
 
 const closeMiniTerminal = () => {
+  const saved = sessionStorage.getItem('dashboardState');
+  if (saved) {
+    try {
+      const state = JSON.parse(saved);
+      state.active = false;
+      sessionStorage.setItem('dashboardState', JSON.stringify(state));
+    } catch (_) {}
+  }
   miniTerminal.value.visible = false;
   if (miniWs) { miniWs.close(); miniWs = null; }
+  lastExecCabinetId = '';
 };
 
 const goFullTerminal = () => {
@@ -332,6 +342,9 @@ const flyToTargetCabinets = (cabIds: string[]) => {
   });
   if (targets.length === 0) return;
 
+  // 记死目标机柜（goBack 回 L1 后也不丢，onUnmounted 存状态用它）
+  lastExecCabinetId = cabIds[0];
+
   let cx = 0, cz = 0;
   for (const t of targets) { cx += t.position.x; cz += t.position.z; }
   cx /= targets.length; cz /= targets.length;
@@ -371,6 +384,13 @@ watch(() => routeObj.query, async (q) => {
     const rid = String(q.recordId);
     const pname = String(q.planName);
     openMiniTerminal(rid, pname);
+
+    // 等 hostList 加载完（修复 immediate 时数据未就绪）
+    let retries = 0;
+    while (hostList.value.length === 0 && retries < 20) {
+      await new Promise(r => setTimeout(r, 300));
+      retries++;
+    }
 
     const { targets, planType } = await parsePlanTargets(rid);
     showExecLabel(planType);
@@ -655,6 +675,22 @@ const renderHostModels = () => {
       cab.maxU || 42,
     );
     scene.add(cabinetModel);
+
+    // 根据主机 status 给机柜线框染色
+    const worstStatus = hostsInCabinet.reduce((worst: number, h: any) => {
+      const s = h.status || 1;
+      if (s === 3 || s === 0) return 3;
+      if (s === 2 && worst < 3) return 2;
+      return worst;
+    }, 1);
+    if (worstStatus >= 2) {
+      const lineColor = worstStatus === 3 ? '#ff4d4f' : '#faad14';
+      cabinetModel.children.forEach((child: any) => {
+        if (child.type === 'LineSegments' && child.material?.color) {
+          child.material.color.set(lineColor);
+        }
+      });
+    }
   });
 };
 
@@ -966,15 +1002,20 @@ onMounted(async () => {
   if (saved) {
     try {
       const state = JSON.parse(saved);
-      sessionStorage.removeItem('dashboardState');
-      setTimeout(() => {
-        if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
-        if (state.view === 'L2' && state.cabinetId) flyToTargetCabinets([state.cabinetId]);
-        if (state.miniTerm?.recordId) {
-          openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName);
-          miniLogs.value = state.miniTerm.logs || [];
-        }
-      }, 800);
+      if (state.active !== false) {
+        setTimeout(() => {
+          if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
+          if (state.cabinetId) {
+            flyToTargetCabinets([state.cabinetId]);
+          } else {
+            // L1 但有机柜框颜色需要保留 → renderHostModels 已处理
+          }
+          if (state.miniTerm?.recordId) {
+            openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName);
+            miniLogs.value = state.miniTerm.logs || [];
+          }
+        }, 800);
+      }
     } catch (_) {}
   }
   // 绑定 pointerdown 和 click，防止拖拽视角的误触
@@ -984,6 +1025,27 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  // 离开大屏前自动存状态
+  const saved = sessionStorage.getItem('dashboardState');
+  const prevActive = saved ? JSON.parse(saved).active : true;
+  if (miniTerminal.value.visible || prevActive) {
+    const cabinetId = lastExecCabinetId || activeCabinet?.userData?.cabinetId || '';
+    sessionStorage.setItem('dashboardState', JSON.stringify({
+      active: miniTerminal.value.visible,
+      view: currentView.value,
+      cabinetId,
+      thermalOn: isThermalMode.value,
+      camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+      camTarget: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
+      miniTerm: {
+        recordId: miniTerminal.value.recordId,
+        planName: miniTerminal.value.planName,
+        planType: execLabel.value.type,
+        logs: [...miniLogs.value],
+      },
+    }));
+  }
+
   cancelAnimationFrame(frameId);
   if (dashboardWs) dashboardWs.close();
   if (miniWs) miniWs.close();

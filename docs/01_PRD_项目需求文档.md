@@ -30,12 +30,14 @@
 
 ## 3. 技术挑战与简历亮点 (整理给面试官看)
 
-1.  **3D 渲染性能优化**：如何在网页端流畅加载几百个服务器模型？(使用 **InstancedMesh** 实例化渲染技术)。
-2.  **真实异步执行引擎**：后台线程解析 steps_json，查主机表动态修改 host status (1/2/3)，WebSocket 实时广播 3D 事件，DRILL 自动恢复主机状态。
-3.  **3D 大屏与任务联动**：策略页触发演练 → 3D 孪生大屏主机 LED 实时变色 (绿→黄→红) + 浮动迷你终端面板自动弹出，展示实时日志流。
-4.  **前后端状态机驱动的任务流**：使用 Vue3 结合自定义状态机，管理复杂的容灾自动化流程（PENDING→RUNNING→SUCCESS/FAILED/CANCELLED）。
-5.  **响应式大屏适配**：利用 CSS 的 `scale` 方案，实现无论在几寸显示器上，3D 画布和 UI 组件都能完美等比缩放。
-6.  **大规模双向数据通信**：后端 SpringBoot 通过 WebSocket 将演练日志 + 3D 事件双通道实时推送至前端（`/ws/task/log/{id}` + `/ws/dashboard/events`）。
+1.  **3D 渲染性能优化**：如何在网页端流畅加载几百个服务器模型？(使用 **InstancedMesh** 实例化渲染技术，8 机柜 60 主机零卡顿)。
+2.  **真实异步执行引擎**：后台线程解析 steps_json 步骤编排，根据 hostname 查 asset_host 表动态修改 status (1/2/3)，支持三种演练类型 (DRILL/FAILOVER/SCALE) 的不同行为策略 — DRILL 执行后自动恢复主机状态，FAILOVER 持久化变更并迁移服务绑定，SCALE 动态调整服务-主机映射。
+3.  **3D 大屏实时联动**：策略页触发演练 → 3D 孪生大屏相机自动飞行至目标机柜、自动进入 L2 层级、自动切换热力模式 → 主机 LED 脉冲动画实时变色 (绿→黄→红) + 刀片盒发光高亮 + 机柜线框变色 → 浮动迷你终端面板自动弹出，展示与终端页面同步的日志流 → DRILL 执行结束自动恢复所有视觉效果。
+4.  **双通道 WebSocket 实时通信**：`/ws/task/log/{id}` 通道推送 Xterm 风格终端日志流 (INFO/WARN/ERROR 语义着色) + `/ws/dashboard/events` 通道广播结构化 3D 事件 JSON (HOST_STATUS_CHANGE / CABINET_HIGHLIGHT / CAMERA_FLY_TO)，前后端双向实时联动。
+5.  **前后端状态机驱动的任务流**：使用 Vue3 结合自定义状态机，管理复杂的容灾自动化流程（PENDING→RUNNING→SUCCESS/FAILED/CANCELLED）。
+6.  **响应式大屏适配**：利用 CSS 的 `scale` 方案，实现无论在几寸显示器上，3D 画布和 UI 组件都能完美等比缩放。
+7.  **sessionStorage 跨页状态恢复**：浮动终端"返回大屏"功能，通过 sessionStorage 保存 L2 层级/热力模式/相机位置等全部导航状态，从终端页返回后无缝恢复。
+8.  **JWT + bcrypt 安全认证**：jjwt 0.12.5 生成验证 Bearer Token，bcrypt 哈希存储密码，旧 MD5 密码登录时自动迁移，CORS 集中管控。
 
 > [!IMPORTANT]
 > **优化后的系统规模**
@@ -72,3 +74,13 @@
 - **权限树**：`sys_permission` 表存储菜单（type=1）和按钮（type=2），el-tree 可视化勾选
 - **动态侧边栏**：前端根据当前用户角色的权限码动态渲染菜单
 - **按钮级权限**：`v-if` 检查 `userStore.permissions` 控制增删改按钮显隐
+
+### 4.5 真实执行引擎 — 三种演练类型行为
+
+| 演练类型 | 主机状态变更 | 执行后行为 | service_host_map | 预案状态 |
+|---|---|---|---|---|
+| **DRILL (演练)** | status 1→3 (宕机) | 执行结束后**自动恢复**为 1(健康)，3D LED 恢复绿色 | 不变 | 保持启用 |
+| **FAILOVER (故障切换)** | status 1→3 (宕机) | **持久化**不恢复，将宕机主机的服务绑定迁移到备用主机 | 动态修改 host_id | 自动禁用 (status=0) |
+| **SCALE (弹性伸缩)** | 不直接修改主机状态 | 动态调整服务-主机映射关系 | 增加或移除绑定 | 自动禁用 (status=0) |
+
+**预案重置**：`POST /api/task/plan/reset/{planId}` 可将 FAILOVER/SCALE 执行后的预案恢复为启用状态，并还原服务绑定关系。

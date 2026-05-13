@@ -92,6 +92,10 @@ Authorization: Bearer <token>
 ## 3. 任务中心 (Task Center)
 ### 3.1 预案方案库 CRUD ✔已实现
 **接口路径**: `GET /api/task/plan/list`
+
+**接口路径**: `POST /api/task/plan/reset/{planId}` ✔已实现
+- 说明：重置 FAILOVER/SCALE 执行后的预案状态。将预案 status 恢复为 1(启用)，同时还原执行过程中被修改的 service_host_map 绑定关系。DRILL 类型无需此操作 (DRILL 执行结束后自动恢复)。
+- 返回：`{ code: 200, data: "预案已重置" }`
 - Params: `current, size, planName, serviceId, planType`
 - 说明：分页查询，支持按名称/服务/类型筛选，按优先级升序、创建时间降序排列。
 
