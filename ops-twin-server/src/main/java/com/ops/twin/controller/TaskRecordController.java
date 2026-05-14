@@ -54,6 +54,15 @@ public class TaskRecordController {
             return Result.error("预案【" + plan.getPlanName() + "】当前处于禁用状态，无法执行");
         }
 
+        // 1.5 检查是否有正在执行或等待中的任务
+        long runningCount = taskRecordService.count(
+            new LambdaQueryWrapper<TaskRecord>()
+                .in(TaskRecord::getRunStatus, "PENDING", "RUNNING")
+        );
+        if (runningCount > 0) {
+            return Result.error("有任务正在执行中，请等待完成后再触发新任务");
+        }
+
         // 2. 触发异步引擎，获取 recordId
         Long recordId = taskRecordService.triggerAsync(plan, operator);
 

@@ -182,16 +182,19 @@ public class TaskExecutionEngine {
                 runStep(rid, step, currentExecIndex++, realStepCount, hostRevertMap, isDrill, plan);
             }
 
-            // DRILL 模式：执行完成后恢复所有主机原状态
-            revertDrillChanges(hostRevertMap, rid);
+            // 所有类型预案执行完成后统一禁用，需手动点击"重置"恢复
+            TaskPlan disablePlan = new TaskPlan();
+            disablePlan.setId(plan.getId());
+            disablePlan.setStatus(0);
+            planMapper.updateById(disablePlan);
+            pushLog(rid, "");
+            pushLog(rid, "[INFO] ═══════════════════════════════════════════");
+            pushLog(rid, "[INFO]  演练完成，预案已禁用。请手动点击【重置】恢复");
+            pushLog(rid, "[INFO] ═══════════════════════════════════════════");
+            pushLog(rid, "");
 
-            // FAILOVER / SCALE 执行后禁用预案
-            if (!isDrill) {
-                TaskPlan disablePlan = new TaskPlan();
-                disablePlan.setId(plan.getId());
-                disablePlan.setStatus(0);
-                planMapper.updateById(disablePlan);
-                pushLog(rid, "[INFO] 预案已自动禁用，请通过【重置】恢复");
+            if (isDrill) {
+                pushLog(rid, "[INFO] DRILL 模式：主机状态已保留（红/黄不恢复），重置后自动还原");
             }
 
             long durationMs = System.currentTimeMillis() - startMs;
