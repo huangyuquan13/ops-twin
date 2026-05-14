@@ -78,7 +78,7 @@ const routes: Array<RouteRecordRaw> = [
         ]
     }
 ]
-
+//创建router实例 使用history方法 将routers添加进来 
 const router = createRouter({
     history: createWebHistory(),
     routes

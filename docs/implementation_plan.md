@@ -3,15 +3,18 @@
 ## 核心路线图 (基于侧边栏 4 大中枢架构)
 
 ### [x] Stage 1: 基础设施与看板中心 (已完成)
-- [x] **底层基座**: Vue3 + SpringBoot 脚手架，MD5加密，Pinia 持久化。
+
+- [x] **底层基座**: Vue3 + SpringBoot 脚手架，bcrypt 加密，Pinia 持久化。
 - [x] **3D 孪生大屏**: InstancedMesh 性能优化，L1/L2/L3 物理机柜与插槽真实解耦穿透。
 - [x] **效能大盘分析**: 对接 MySQL 实时汇总总算力、总内存、告警占比，ECharts 响应式渲染。
 
 ### [x] Stage 2: 资产中心 (已完成)
+
 - [x] **物理资产台账**: 完整的 `asset_host`与`asset_cabinet` CRUD，强化了空间冲突与唯一性拦截，作为 3D 渲染和逻辑拓扑的绝对数据源头。
 - [x] **逻辑服务映射**: 引入 Vue Flow，支持拖拽将零散的物理服务器组装为“逻辑业务系统”（如支付系统），实现物理架构到业务架构的转换。
 
 ### [▶] Stage 3: 任务中心 (自动化演练引擎 - 核心闭环已完成)
+
 - [x] **预案方案库**: task_plan 表建立，完整 CRUD + 启用/禁用，关联逻辑服务时显示主机绑定数。
 - [x] **演练工作流**: 可视化步骤编辑器（Vue Flow 拖拽 + 动作库面板），目标参数配置，自动序列化为 steps_json 保存。
 - [x] **异步执行引擎**: @Async 解析 steps_json 逐步模拟，支持用户手动终止（CANCELLED），空步骤/无效服务自动报错。
@@ -19,12 +22,14 @@
 - [x] **逻辑服务-预案-工作流联动**: 引擎校验关联服务存在性及主机绑定数（0台→FAILED），步骤 target 为空→FAILED。工作流 Target 改为关联服务主机下拉选择。
 
 ### [▶] Stage 3.5: 任务中心体验优化 (刚完成)
+
 - [x] **任务总览页**: `tasks/index.vue` 仪表盘（KPI 统计卡片 + 预案列表 + 快捷编排/执行按钮）
 - [x] **侧边栏**: 任务中心保留「任务总览」「预案方案库」「实时监控终端」三个入口
 - [x] **workflow 参数守卫**: `onMounted` 检测无 planId → 跳回任务总览
 - [x] **设定方案联动**: index 点击「设定方案」→ 跳转 strategy 并自动打开新增弹窗
 
 ### [x] Stage 4: 系统管理 (安全与审计 — 已完成)
+
 - [x] **JWT 真实认证 + bcrypt 密码 + CORS 集中管控**：jjwt 0.12.5 生成验证 Bearer Token，bcrypt 哈希存储密码，旧 MD5 登录时自动迁移。CORS 统一在 `WebConfig.java` 管控，移除所有 Controller 的 `@CrossOrigin`。
 - [x] **用户中心**: 账号、密码、个人资料管理（`system/user.vue` CRUD + 头像上传 + 按钮权限控制）。
 - [x] **权限配置**: `sys_role` + `sys_role_permission` 两张新表，角色 CRUD + el-tree 权限树勾选分配。`sys_permission` 扩展 type 字段（1=菜单 2=按钮），permission_code 控制按钮级权限。
@@ -33,35 +38,42 @@
 - [x] **动态侧边栏**: layout 改为从 userStore.menuSections 动态渲染，不同角色看到不同菜单，刷新不丢失。
 
 ### [x] Stage 5: 真实执行引擎 (已完成)
+
 - [x] **真实执行引擎 — 查主机表 + 改状态 + WebSocket 广播 3D 事件**：`TaskExecutionEngine` 根据 hostname 查询 `asset_host` 表，动态修改 host status (1/2/3)，通过 `/ws/dashboard/events` 广播结构化 JSON 事件到 3D 大屏。
 - [x] **双通道 WebSocket**：`/ws/task/log/{recordId}` 推流终端日志 + `/ws/dashboard/events` 广播 3D 状态变更事件。
 
 ### [x] Stage 6: 演练联动与逻辑拓扑 (已完成)
+
 - [x] **演练联动 — 浮动终端 + 3D 实时变色 + DRILL 自动恢复**：策略页触发演练 → 3D 大屏主机 LED 实时变色（绿→黄→红）→ 浮动迷你终端面板自动弹出。DRILL 执行结束后主机状态自动恢复为健康，FAILOVER 持久化变更。
 - [x] **Vue Flow 拓扑编辑器**: 拖拽物理节点到画布，可视化构建逻辑服务拓扑。
 - [x] **服务-主机绑定**: ServiceHostMap 映射表，拓扑保存同步更新绑定关系。
 
 ### [x] Stage 7: 大屏可视化增强 (已完成)
+
 - [x] **ECharts 图表增强**: 效能大盘 KPI 统计卡片 + 饼图 + 趋势图。
 - [x] **响应式适配**: 大屏布局自适应不同分辨率。
 
 ### [x] Stage 8: AOP 审计日志 (已完成)
+
 - [x] **@AuditLog 注解**: 自定义方法级审计注解，记录操作类型与描述。
 - [x] **AuditLogAspect 切面**: 环绕通知自动拦截注解方法，提取操作人（从 Authorization 头），记录操作结果（SUCCESS / FAILED）。
 - [x] **控制器接入**: 6 个核心控制器（AssetCabinet、Asset、User、Role、TaskPlan、AssetService）的创建/删除方法全部接入 AOP 审计。
 
 ### [x] Stage 9: Docker 容器化 (已完成)
+
 - [x] **后端 Dockerfile**: 基于 eclipse-temurin:17-jre-alpine 构建 Spring Boot 镜像。
 - [x] **前端 Dockerfile**: 多阶段构建（node:20-alpine 编译 + nginx:alpine 运行），nginx 反向代理 API/WS/Uploads。
 - [x] **Docker Compose**: 一键编排 MySQL + Server + Nginx，健康检查 + 依赖等待 + 数据持久化。
 
 ### [x] Stage 10: 文档完善 (已完成)
+
 - [x] **项目 README**: 技术栈表格 + Docker 快速启动 + 本地开发 + 测试命令 + 文档链接。
 - [x] **部署文档**: `04_DEPLOY_部署文档.md` — Docker 部署 + 本地手动部署 + 生产注意事项。
 - [x] **API 文档 JWT**: 在 03_API 顶部补充 JWT 认证说明（Bearer Token 格式）。
 - [x] **实施计划更新**: 追加 Stage 5-10 完成标记。
 
 ## 今日焦点
+
 详见同目录下的 `today_plan.md`。
 
 ---
@@ -72,19 +84,19 @@
 
 ### 核心架构
 
-| 维度 | 成果 |
-|---|---|
-| **前端** | Vue 3.5 + TypeScript 6 + Vite 8 + Element Plus 2.13 + Pinia 3 + Vue Router 4 |
-| **后端** | Spring Boot 3.2 + MyBatis-Plus 3.5.5 + Java 17 + Maven |
-| **3D 渲染** | Three.js 0.184 + InstancedMesh 实例化渲染 + Tween.js 0.25 相机动画 |
-| **图表** | ECharts 6.0 响应式效能大盘 |
-| **拓扑编辑** | @vue-flow/core 拖拽式逻辑服务拓扑 + 演练工作流步骤编排 |
-| **数据库** | MySQL 8.0 + 13 张业务表 (系统管理 5 张 + 资产中心 4 张 + 任务中心 3 张 + 流水日志 1 张) |
-| **认证** | jjwt 0.12.5 真实 JWT (Bearer Token) + bcrypt 密码哈希 + 旧 MD5 登录时自动迁移 |
-| **CORS** | WebConfig.java 集中管控，移除所有 Controller 的 @CrossOrigin |
-| **权限** | RBAC 角色-权限模型，sys_role + sys_role_permission 两张表，el-tree 权限树，动态侧边栏，按钮级 v-if 控制 |
-| **审计** | @AuditLog AOP 切面自动拦截写入操作，6 种事件类型，记录操作人/类型/描述/结果 |
-| **容器化** | Docker Compose 一键编排 MySQL + Spring Boot + Nginx，健康检查 + 依赖等待 + 数据持久化 |
+| 维度         | 成果                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| **前端**     | Vue 3.5 + TypeScript 6 + Vite 8 + Element Plus 2.13 + Pinia 3 + Vue Router 4                            |
+| **后端**     | Spring Boot 3.2 + MyBatis-Plus 3.5.5 + Java 17 + Maven                                                  |
+| **3D 渲染**  | Three.js 0.184 + InstancedMesh 实例化渲染 + Tween.js 0.25 相机动画                                      |
+| **图表**     | ECharts 6.0 响应式效能大盘                                                                              |
+| **拓扑编辑** | @vue-flow/core 拖拽式逻辑服务拓扑 + 演练工作流步骤编排                                                  |
+| **数据库**   | MySQL 8.0 + 13 张业务表 (系统管理 5 张 + 资产中心 4 张 + 任务中心 3 张 + 流水日志 1 张)                 |
+| **认证**     | jjwt 0.12.5 真实 JWT (Bearer Token) + bcrypt 密码哈希 + 旧 MD5 登录时自动迁移                           |
+| **CORS**     | WebConfig.java 集中管控，移除所有 Controller 的 @CrossOrigin                                            |
+| **权限**     | RBAC 角色-权限模型，sys_role + sys_role_permission 两张表，el-tree 权限树，动态侧边栏，按钮级 v-if 控制 |
+| **审计**     | @AuditLog AOP 切面自动拦截写入操作，6 种事件类型，记录操作人/类型/描述/结果                             |
+| **容器化**   | Docker Compose 一键编排 MySQL + Spring Boot + Nginx，健康检查 + 依赖等待 + 数据持久化                   |
 
 ### 3D 数字孪生能力
 
