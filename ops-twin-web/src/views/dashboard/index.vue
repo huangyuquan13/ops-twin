@@ -199,6 +199,7 @@ const miniLogs = ref<string[]>([]);
 const miniTerminalRef = ref<HTMLElement | null>(null);
 let miniWs: WebSocket | null = null;
 let lastExecCabinetId = '';  // 记死执行目标的机柜，goBack 回 L1 后也不丢
+const drillHostLabels: any[] = [];  // 演练时挂载的 CSS2D 主机名标签
 
 const openMiniTerminal = (recordId: string, planName: string) => {
   miniTerminal.value = { visible: true, recordId, planName };
@@ -327,23 +328,21 @@ const parsePlanTargets = async (recordId: string): Promise<{ targets: string[]; 
   }
 };
 
-/** 计算受影响机柜的包围盒中心，TWEEN 飞相机 + 自动进 L2（单机柜时） */
+/** 飞到受影响机柜 — 多机柜自动算包围盒距离，隐藏无关机柜 */
 const flyToTargetCabinets = (cabIds: string[]) => {
-  // 先恢复所有机柜可见（修复重复执行时不进 L2 的问题）
-  scene.children.forEach((child: any) => {
-    if (child.name === 'hostModel') child.visible = true;
-  });
-
   const targets: any[] = [];
   scene.children.forEach((child: any) => {
-    if (child.name === 'hostModel' && cabIds.includes(child.userData?.cabinetId)) {
-      targets.push(child);
+    if (child.name === 'hostModel') {
+      const match = cabIds.includes(child.userData?.cabinetId);
+      child.visible = match;
+      if (match) targets.push(child);
     }
   });
   if (targets.length === 0) return;
 
-  // 记死目标机柜（goBack 回 L1 后也不丢，onUnmounted 存状态用它）
   lastExecCabinetId = cabIds[0];
+  l1CameraState.position.copy(camera.position);
+  l1CameraState.target.copy(controls.target);
 
   let cx = 0, cz = 0;
   for (const t of targets) { cx += t.position.x; cz += t.position.z; }
@@ -352,30 +351,54 @@ const flyToTargetCabinets = (cabIds: string[]) => {
   let distance: number;
   if (targets.length === 1) {
     distance = getL2Distance(targets[0].userData.maxU || 8);
-    currentView.value = 'L2';
-    activeCabinet = targets[0];
-    selectedCabinet.value = targets[0].userData;
-    scene.children.forEach((child: any) => {
-      if (child.name === 'hostModel' && !targets.includes(child)) child.visible = false;
-    });
-    l1CameraState.position.copy(camera.position);
-    l1CameraState.target.copy(controls.target);
   } else {
-    distance = targets.length <= 3 ? 12 : 18;
-    currentView.value = 'L1';
+    let maxDist = 0;
+    for (const t of targets) {
+      const dx = t.position.x - cx;
+      const dz = t.position.z - cz;
+      maxDist = Math.max(maxDist, Math.sqrt(dx * dx + dz * dz));
+    }
+    distance = maxDist * 2.0 + 6;
   }
+  currentView.value = 'L2';
+  activeCabinet = targets[0];
+  selectedCabinet.value = targets[0].userData;
 
   const from = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
-  const toY = targets[0].position.y;
-  const toZ = cz + distance;
   new TWEEN.Tween(from)
-    .to({ x: cx, y: toY, z: toZ }, 1200)
+    .to({ x: cx, y: targets[0].position.y, z: cz + distance }, 1200)
     .easing(TWEEN.Easing.Quadratic.InOut)
     .onUpdate(() => {
       camera.position.set(from.x, from.y, from.z);
-      controls.target.set(cx, toY, cz);
+      controls.target.set(cx, targets[0].position.y, cz);
     })
     .start();
+};
+
+/** 给涉事主机挂 CSS2D 名称标签 */
+const showDrillHostLabels = (hostnames: string[]) => {
+  clearDrillHostLabels();
+  scene.children.forEach((child: any) => {
+    if (child.name === 'hostModel' && hostnames.includes(child.userData?.hostname)) {
+      const div = document.createElement('div');
+      div.textContent = child.userData.hostname || '';
+      div.style.cssText =
+        'color:#00e5ff;font-size:11px;font-family:JetBrains Mono,monospace;' +
+        'background:rgba(0,0,0,0.8);padding:2px 6px;border-radius:3px;' +
+        'white-space:nowrap;pointer-events:none;';
+      const label = new CSS2DObject(div);
+      label.position.copy(child.position);
+      label.position.y += 1.2;
+      label.name = 'drillHostLabel';
+      scene.add(label);
+      drillHostLabels.push(label);
+    }
+  });
+};
+
+const clearDrillHostLabels = () => {
+  drillHostLabels.forEach(l => scene.remove(l));
+  drillHostLabels.length = 0;
 };
 
 // 检查是否从演练执行页跳转过来
@@ -403,6 +426,7 @@ watch(() => routeObj.query, async (q) => {
 
     if (affectedCabs.size > 0) {
       flyToTargetCabinets([...affectedCabs]);
+      showDrillHostLabels(targets);
     }
 
     if (!isThermalMode.value) {
@@ -931,15 +955,20 @@ const connectDashboardWs = () => {
     try {
       const data = JSON.parse(event.data);
       if (data.type === "HOST_STATUS") {
-        // 更新本地数据
         const host = hostList.value.find((h: any) => h.id === data.hostId);
         if (host) {
           host.status = data.status;
+          if (host.cabinetId && data.action !== 'DRILL_REVERT') {
+            flyToTargetCabinets([host.cabinetId]);
+          }
         }
-        // 更新 3D 场景中的主机颜色
         updateHostColor(data.hostId, data.status);
       }
       if (data.type === 'HOST_STATUS' && data.action === 'DRILL_REVERT') {
+        clearDrillHostLabels();
+        scene.children.forEach((child: any) => {
+          if (child.name === 'hostModel') child.visible = true;
+        });
         hideExecLabel('SUCCESS');
       }
     } catch (_) { /* 非 JSON 消息忽略 */ }
@@ -1025,6 +1054,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  clearDrillHostLabels();
   // 离开大屏前自动存状态
   const saved = sessionStorage.getItem('dashboardState');
   const prevActive = saved ? JSON.parse(saved).active : true;
