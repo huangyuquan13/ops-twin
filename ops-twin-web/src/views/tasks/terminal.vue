@@ -336,6 +336,12 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  if (logs.value.length > 0) {
+    const saved = sessionStorage.getItem('dashboardState');
+    const state = saved ? JSON.parse(saved) : {};
+    state.miniTerm = { ...(state.miniTerm || {}), logs: logs.value.slice(-200) };
+    sessionStorage.setItem('dashboardState', JSON.stringify(state));
+  }
   if (ws) ws.close();
   stopProgressSimulation(0);
   stopElapsedTimer();
