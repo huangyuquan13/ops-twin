@@ -356,37 +356,55 @@ const toggleStatus = async (row: any) => {
 
 // ============ 执行预案 ============
 const handleRun = (row: any) => {
-  sessionStorage.removeItem('dashboardState');
-  ElMessageBox.confirm(
-    `即将触发演练预案【${row.planName}】，确认执行？\n\n执行后将自动跳转至实时监控终端。`,
-    '执行确认',
-    {
-      confirmButtonText: '确认执行',
-      cancelButtonText:  '再想想',
-      type: 'warning',
-    }
-  ).then(async () => {
-    // 标记该行 loading
-    runLoading.value[row.id] = true;
-    try {
-      const res: any = await request.post(`/api/task/record/trigger/${row.id}`, null, {
-        params: { operator: userStore.userInfo.username || 'admin' }
+  // 安全门：检查是否有残留的终端记录
+  const saved = sessionStorage.getItem('dashboardState');
+  const hasLogs = saved ? (() => {
+    try { const s = JSON.parse(saved); return s.miniTerm?.logs?.length > 0; }
+    catch (_) { return false; }
+  })() : false;
+
+  if (hasLogs) {
+    ElMessageBox.confirm(
+      '终端尚有上次执行记录，确认将清屏并执行新任务？',
+      '确认清屏执行',
+      { confirmButtonText: '确认清屏执行', cancelButtonText: '取消', type: 'warning' }
+    ).then(() => {
+      sessionStorage.removeItem('dashboardState');
+      doRun(row);
+    }).catch(() => {});
+  } else {
+    ElMessageBox.confirm(
+      `即将触发演练预案【${row.planName}】，确认执行？`,
+      '执行确认',
+      { confirmButtonText: '确认执行', cancelButtonText: '再想想', type: 'warning' }
+    ).then(() => {
+      sessionStorage.removeItem('dashboardState');
+      doRun(row);
+    }).catch(() => {});
+  }
+};
+
+const doRun = async (row: any) => {
+  runLoading.value[row.id] = true;
+  try {
+    const res: any = await request.post(`/api/task/record/trigger/${row.id}`, null, {
+      params: { operator: userStore.userInfo.username || 'admin' }
+    });
+    if (res.code === 200) {
+      const { recordId, planName } = res.data;
+      ElMessage.success('演练引擎已启动，跳转至 3D 大屏实时观察');
+      router.push({
+        path: '/dashboard/index',
+        query: { recordId: String(recordId), planName }
       });
-      if (res.code === 200) {
-        const { recordId, planName } = res.data;
-        ElMessage.success(`演练引擎已启动，跳转至 3D 大屏实时观察`);
-        // 跳转到 3D 大屏，带上 recordId + planName，大屏会自动弹出浮动终端
-        router.push({
-          path: '/dashboard/index',
-          query: { recordId: String(recordId), planName }
-        });
-      } else {
-        ElMessage.error(res.message || '触发失败');
-      }
-    } finally {
-      runLoading.value[row.id] = false;
+    } else {
+      ElMessage.warning(res.message || '触发失败');
     }
-  }).catch(() => {});
+  } catch (_) {
+    ElMessage.error('触发失败，请检查后端服务');
+  } finally {
+    runLoading.value[row.id] = false;
+  }
 };
 
 const handlePlanReset = async (row: any) => {
