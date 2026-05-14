@@ -141,8 +141,9 @@ public class TaskPlanController {
     public Result<String> reset(@PathVariable Long planId) {
         TaskPlan plan = taskPlanService.getById(planId);
         if (plan == null) return Result.error("预案不存在");
-        if (!"FAILOVER".equals(plan.getPlanType()) && !"SCALE".equals(plan.getPlanType())) {
-            return Result.error("仅故障切换和扩缩容预案需要重置");
+        String planType = plan.getPlanType();
+        if (!"FAILOVER".equals(planType) && !"SCALE".equals(planType) && !"DRILL".equals(planType)) {
+            return Result.error("仅故障切换、扩缩容和演练预案需要重置");
         }
 
         Long svcId = plan.getServiceId();
@@ -183,9 +184,36 @@ public class TaskPlanController {
                 }
             }
         }
+
+        // DRILL 重置：恢复演练中受影响的主机状态为健康
+        if ("DRILL".equals(planType)) {
+            String stepsJson = plan.getStepsJson();
+            if (stepsJson != null && !stepsJson.isBlank()) {
+                Object raw = JSON.parse(stepsJson);
+                JSONArray steps = raw instanceof JSONArray ? (JSONArray) raw
+                    : (raw instanceof JSONObject ? ((JSONObject) raw).getJSONArray("steps") : null);
+                if (steps != null) {
+                    for (int i = 0; i < steps.size(); i++) {
+                        JSONObject step = steps.getJSONObject(i);
+                        if (step == null || step.containsKey("isLayoutMeta")) continue;
+                        String target = step.getString("target");
+                        if (target != null && !target.isBlank()) {
+                            AssetHost host = assetHostMapper.selectOne(
+                                new LambdaQueryWrapper<AssetHost>().eq(AssetHost::getHostname, target));
+                            if (host != null && host.getStatus() != 1) {
+                                host.setStatus(1);
+                                assetHostMapper.updateById(host);
+                                restoredHosts++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         plan.setStatus(1);
         taskPlanService.updateById(plan);
 
-        return Result.success("已重置，恢复 " + restoredHosts + " 台主机，重建服务绑定");
+        return Result.success("已重置，恢复 " + restoredHosts + " 台主机");
     }
 }

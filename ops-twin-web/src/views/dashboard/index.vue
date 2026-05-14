@@ -200,6 +200,7 @@ const miniTerminalRef = ref<HTMLElement | null>(null);
 let miniWs: WebSocket | null = null;
 let lastExecCabinetId = '';  // 记死执行目标的机柜，goBack 回 L1 后也不丢
 const drillHostLabels: any[] = [];  // 演练时挂载的 CSS2D 主机名标签
+let drillHostnames: string[] = [];   // 当前演练涉及的主机名（用于切页恢复）
 
 const openMiniTerminal = (recordId: string, planName: string) => {
   miniTerminal.value = { visible: true, recordId, planName };
@@ -379,19 +380,29 @@ const flyToTargetCabinets = (cabIds: string[]) => {
 const showDrillHostLabels = (hostnames: string[]) => {
   clearDrillHostLabels();
   scene.children.forEach((child: any) => {
-    if (child.name === 'hostModel' && hostnames.includes(child.userData?.hostname)) {
-      const div = document.createElement('div');
-      div.textContent = child.userData.hostname || '';
-      div.style.cssText =
-        'color:#00e5ff;font-size:11px;font-family:JetBrains Mono,monospace;' +
-        'background:rgba(0,0,0,0.8);padding:2px 6px;border-radius:3px;' +
-        'white-space:nowrap;pointer-events:none;';
-      const label = new CSS2DObject(div);
-      label.position.copy(child.position);
-      label.position.y += 1.2;
-      label.name = 'drillHostLabel';
-      scene.add(label);
-      drillHostLabels.push(label);
+    if (child.name === 'hostModel') {
+      // 主机名藏在 servers 数组的 bladeServer 的 parentHost 里
+      const servers = child.userData?.servers;
+      if (!servers) return;
+      servers.children.forEach((blade: any) => {
+        const host = blade.userData?.parentHost;
+        if (host && hostnames.includes(host.hostname)) {
+          const div = document.createElement('div');
+          div.textContent = host.hostname || '';
+          div.style.cssText =
+            'color:#00e5ff;font-size:10px;font-family:JetBrains Mono,monospace;' +
+            'background:rgba(0,0,0,0.85);padding:2px 5px;border-radius:3px;' +
+            'white-space:nowrap;pointer-events:none;';
+          const label = new CSS2DObject(div);
+          // 标签放在刀片旁
+          blade.getWorldPosition(label.position);
+          label.position.x += 1.0;
+          label.position.y += 0.3;
+          label.name = 'drillHostLabel';
+          scene.add(label);
+          drillHostLabels.push(label);
+        }
+      });
     }
   });
 };
@@ -425,6 +436,7 @@ watch(() => routeObj.query, async (q) => {
     }
 
     if (affectedCabs.size > 0) {
+      drillHostnames = targets;
       flyToTargetCabinets([...affectedCabs]);
       showDrillHostLabels(targets);
     }
@@ -958,9 +970,6 @@ const connectDashboardWs = () => {
         const host = hostList.value.find((h: any) => h.id === data.hostId);
         if (host) {
           host.status = data.status;
-          if (host.cabinetId && data.action !== 'DRILL_REVERT') {
-            flyToTargetCabinets([host.cabinetId]);
-          }
         }
         updateHostColor(data.hostId, data.status);
       }
@@ -1031,20 +1040,20 @@ onMounted(async () => {
   if (saved) {
     try {
       const state = JSON.parse(saved);
-      if (state.active !== false) {
-        setTimeout(() => {
-          if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
-          if (state.cabinetId) {
-            flyToTargetCabinets([state.cabinetId]);
-          } else {
-            // L1 但有机柜框颜色需要保留 → renderHostModels 已处理
-          }
-          if (state.miniTerm?.recordId) {
-            openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName);
-            miniLogs.value = state.miniTerm.logs || [];
-          }
-        }, 800);
-      }
+      setTimeout(() => {
+        if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
+        if (state.cabinetId) {
+          flyToTargetCabinets([state.cabinetId]);
+        }
+        if (state.drillHostnames?.length) {
+          drillHostnames = state.drillHostnames;
+          showDrillHostLabels(drillHostnames);
+        }
+        if (state.active !== false && state.miniTerm?.recordId) {
+          openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName);
+          miniLogs.value = state.miniTerm.logs || [];
+        }
+      }, 800);
     } catch (_) {}
   }
   // 绑定 pointerdown 和 click，防止拖拽视角的误触
@@ -1055,26 +1064,26 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearDrillHostLabels();
-  // 离开大屏前自动存状态
+  // 离开大屏前保存状态（总是保存，合并已有的 dashboardState 保留终端日志）
   const saved = sessionStorage.getItem('dashboardState');
-  const prevActive = saved ? JSON.parse(saved).active : true;
-  if (miniTerminal.value.visible || prevActive) {
-    const cabinetId = lastExecCabinetId || activeCabinet?.userData?.cabinetId || '';
-    sessionStorage.setItem('dashboardState', JSON.stringify({
-      active: miniTerminal.value.visible,
-      view: currentView.value,
-      cabinetId,
-      thermalOn: isThermalMode.value,
-      camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
-      camTarget: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
-      miniTerm: {
-        recordId: miniTerminal.value.recordId,
-        planName: miniTerminal.value.planName,
-        planType: execLabel.value.type,
-        logs: [...miniLogs.value],
-      },
-    }));
-  }
+  const prev = saved ? JSON.parse(saved) : {};
+  const cabinetId = lastExecCabinetId || activeCabinet?.userData?.cabinetId || '';
+  sessionStorage.setItem('dashboardState', JSON.stringify({
+    ...prev,
+    active: miniTerminal.value.visible || prev.active || false,
+    view: currentView.value,
+    cabinetId,
+    thermalOn: isThermalMode.value,
+    drillHostnames: [...drillHostnames],
+    camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+    camTarget: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
+    miniTerm: {
+      recordId: miniTerminal.value.recordId || prev.miniTerm?.recordId || '',
+      planName: miniTerminal.value.planName || prev.miniTerm?.planName || '',
+      planType: execLabel.value.type || prev.miniTerm?.planType || '',
+      logs: miniLogs.value.length > 0 ? [...miniLogs.value] : (prev.miniTerm?.logs || []),
+    },
+  }));
 
   cancelAnimationFrame(frameId);
   if (dashboardWs) dashboardWs.close();

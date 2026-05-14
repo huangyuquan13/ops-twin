@@ -162,6 +162,13 @@ const connectWs = () => {
       stopElapsedTimer();
     }
     logs.value.push(msg);
+    // 实时写入 sessionStorage，防止切页丢失
+    try {
+      const s = sessionStorage.getItem('dashboardState');
+      const st = s ? JSON.parse(s) : {};
+      st.miniTerm = { ...(st.miniTerm || {}), logs: logs.value.slice(-200) };
+      sessionStorage.setItem('dashboardState', JSON.stringify(st));
+    } catch (_) {}
     scrollToBottom();
   };
 
@@ -291,23 +298,23 @@ const backToDashboard = () => { router.push('/dashboard/index'); };
 
 // ============ 生命周期 ============
 onMounted(async () => {
-  // 无 recordId 直接访问终端页，不做任何操作
-  if (!recordId.value) {
-    logs.value.push('[SYSTEM] 未指定任务流水 ID，请从预案方案库执行演练后自动跳转');
-    return;
+  // 始终尝试恢复上次的日志
+  const saved = sessionStorage.getItem('dashboardState');
+  if (saved) {
+    try {
+      const state = JSON.parse(saved);
+      if (state.miniTerm?.logs?.length) {
+        logs.value = state.miniTerm.logs;
+        nextTick(() => scrollToBottom());
+      }
+    } catch (_) {}
   }
 
-  if (hasDashboardState.value) {
-    const saved = sessionStorage.getItem('dashboardState');
-    if (saved) {
-      try {
-        const state = JSON.parse(saved);
-        if (state.miniTerm?.logs?.length) {
-          logs.value = state.miniTerm.logs;
-          nextTick(() => scrollToBottom());
-        }
-      } catch (_) {}
+  if (!recordId.value) {
+    if (logs.value.length === 0) {
+      logs.value.push('[SYSTEM] 未指定任务流水 ID，请从预案方案库执行演练后自动跳转');
     }
+    return;
   }
 
   // 如果从浮动终端传来已知终态，直接显示

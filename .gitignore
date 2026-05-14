@@ -18,6 +18,7 @@ ops-twin-server/src/main/resources/application.yml
 ops-twin-server/src/main/resources/application-*.yml
 ops-twin-server/ops_twin_db*.sql
 ops-twin-server/新增*.sql
+ops-twin-server/demo_*.sql
 docker-compose.yml
 docs/04_DEPLOY_*
 docs/superpowers/
@@ -34,10 +35,13 @@ images/
 # === IDE ===
 .idea/
 *.iml
+.claude/
 .vscode/settings.json
 *.swp
 *.swo
 *~
+.gstack/
+ops-twin-web/.gstack/
 
 # === OS ===
 Thumbs.db

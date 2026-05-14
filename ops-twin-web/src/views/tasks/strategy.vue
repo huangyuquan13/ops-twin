@@ -107,7 +107,7 @@
               </div>
               <div class="action-row">
                 <el-button v-if="userStore.hasPerm('strategy:execute') && row.status === 1" link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
-                <el-button v-if="userStore.hasPerm('strategy:execute') && row.planType !== 'DRILL' && row.status === 0" link type="warning" :loading="resetLoading[row.id]" @click="handlePlanReset(row)">重置</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:execute') && row.status === 0" link type="warning" :loading="resetLoading[row.id]" @click="handlePlanReset(row)">重置</el-button>
                 <el-button v-if="userStore.hasPerm('strategy:delete')" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
               </div>
             </div>
