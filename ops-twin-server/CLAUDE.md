@@ -59,13 +59,14 @@ src/main/java/com/ops/twin/
   service/
     TaskExecutionEngine.java   # @Async real execution engine:
                                #   - Queries asset_host by hostname, changes host status (1/2/3)
-                               #   - DRILL: auto-revert host status after execution
-                               #   - FAILOVER: persist changes + migrate service_host_map bindings
-                               #   - SCALE: dynamically add/remove service_host_map entries
-                               #   - FAILOVER/SCALE: auto-disable plan (status=0) after execution
+                               #   - DRILL: keeps host state after execution (no auto-revert), plan disables
+                               #   - FAILOVER/SCALE: persist changes + migrate service_host_map, plan disables
+                               #   - ALL types: auto-disable plan (status=0) after execution, manual reset required
                                #   - Validates service existence + host count before running
-                               #   - Supports cancel signal (CANCELLED state)
+                               #   - Supports cancel signal (CANCELLED state, reverts partial DRILL changes)
                                #   - Broadcasts 3D events to /ws/dashboard/events
+    StaleTaskCleanup.java      # @EventListener(ApplicationReadyEvent) — cancels stale RUNNING/PENDING
+                               #   task records on startup (JVM restart kills async threads)
     TaskPlanService.java       # IService<TaskPlan> + unique name check + reset logic
     TaskRecordService.java     # IService<TaskRecord> + triggerAsync + terminate
     SysRoleService.java        # IService<SysRole>
@@ -102,16 +103,17 @@ src/main/java/com/ops/twin/
 ## Key Flows
 
 ### Plan Execution (trigger → engine → WebSocket → terminal + 3D)
-1. `TaskRecordController.trigger(planId)` — validates plan & service, calls `triggerAsync()`
+1. `TaskRecordController.trigger(planId)` — validates plan is enabled (status=1) + checks no RUNNING/PENDING tasks exist → calls `triggerAsync()`
 2. `TaskRecordServiceImpl.triggerAsync()` — creates PENDING record, calls `executionEngine.execute()`
-3. `TaskExecutionEngine.execute()` — @Async: validates service/hosts, parses steps_json, runs steps:
+3. `TaskExecutionEngine.execute()` — @Async: validates service/hosts, parses steps_json, runs steps with configurable `waitMs` delay:
    - Queries `asset_host` by hostname, changes status (1→2→3)
    - Pushes logs to `/ws/task/log/{recordId}`
    - Broadcasts 3D events to `/ws/dashboard/events` (HOST_STATUS_CHANGE JSON)
-4. **DRILL**: host status auto-reverts to 1 (healthy) after execution
+4. **DRILL**: host state preserved (no auto-revert), plan auto-disabled (status=0). Manual reset restores hosts to healthy + re-enables plan
 5. **FAILOVER**: changes persist; service_host_map bindings migrated; plan auto-disabled (status=0)
 6. **SCALE**: service_host_map bindings added/removed; plan auto-disabled (status=0)
-7. **Reset**: `POST /api/task/plan/reset/{planId}` restores plan status to 1 and reverts service_host_map changes
+7. **Reset**: `POST /api/task/plan/reset/{planId}` — DRILL: restores affected hosts to status=1 + enables plan. FAILOVER/SCALE: rebuilds service_host_map from topology + restores hosts + enables plan
+8. **Startup Cleanup**: `StaleTaskCleanup` cancels all RUNNING/PENDING records on boot (threads died with JVM)
 
 ### JWT Authentication
 1. `POST /api/auth/login` — validates bcrypt password, returns `{ token, username, roles }`

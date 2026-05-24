@@ -44,7 +44,7 @@
 
 ### [x] Stage 6: 演练联动与逻辑拓扑 (已完成)
 
-- [x] **演练联动 — 浮动终端 + 3D 实时变色 + DRILL 自动恢复**：策略页触发演练 → 3D 大屏主机 LED 实时变色（绿→黄→红）→ 浮动迷你终端面板自动弹出。DRILL 执行结束后主机状态自动恢复为健康，FAILOVER 持久化变更。
+- [x] **演练联动 — 浮动终端 + 3D 实时变色 + 多机柜 L2 + CSS2D 标签**：策略页触发演练 → 3D 大屏多机柜包围盒 L2 视角（框住所有受影响机柜，隐藏无关机柜）→ CSS2D 标签标注涉事主机名 → 主机 LED 实时变色（绿→黄→红）→ 浮动迷你终端自动弹出。DRILL 执行后保持状态不恢复，所有类型需手动重置。
 - [x] **Vue Flow 拓扑编辑器**: 拖拽物理节点到画布，可视化构建逻辑服务拓扑。
 - [x] **服务-主机绑定**: ServiceHostMap 映射表，拓扑保存同步更新绑定关系。
 
@@ -71,6 +71,20 @@
 - [x] **部署文档**: `04_DEPLOY_部署文档.md` — Docker 部署 + 本地手动部署 + 生产注意事项。
 - [x] **API 文档 JWT**: 在 03_API 顶部补充 JWT 认证说明（Bearer Token 格式）。
 - [x] **实施计划更新**: 追加 Stage 5-10 完成标记。
+
+### [x] Stage 11: 演练执行 UX 完善 (2026-05-14 已完成)
+
+- [x] **DRILL 统一禁用 + 并发检查**: 后端三种演练类型执行后均禁用预案 (status=0)，需手动重置。trigger 接口加 RUNNING/PENDING 检查拒绝重复执行。
+- [x] **启动自愈**: `StaleTaskCleanup` 组件启动时自动取消残留的 RUNNING/PENDING 任务记录。
+- [x] **多机柜 L2 同框**: `flyToTargetCabinets` 包围盒算法计算所有受影响机柜距离，隐藏无关机柜。
+- [x] **CSS2D 主机标签**: 执行时给涉事服务器刀片旁挂主机名标签，穿透 `hostModel → servers → bladeServer.userData.parentHost` 获取主机名。
+- [x] **镜头只飞一次**: HOST_STATUS 事件只更新颜色不移动镜头，避免跨机柜反复跳转。
+- [x] **演练结束不跳 L1**: DRILL_REVERT 只清标签 + 恢复机柜可见，镜头停驻 L2。
+- [x] **终端日志实时持久化**: terminal.vue 的 ws.onmessage 每条日志立即写 sessionStorage。onMounted 无条件恢复日志（无 recordId 也能恢复）。
+- [x] **会话状态合并写入**: dashboard 和 terminal 的 onUnmounted 均使用 `...prev` 合并，避免互相覆盖。
+- [x] **DRILL 重置支持**: `POST /api/task/plan/reset/{planId}` 支持 DRILL，解析 steps_json 中 target 主机名恢复为健康 + 启用预案。
+- [x] **执行安全门**: strategy.vue handleRun 检查残留日志 → 弹窗确认清屏 → 执行。后端返回"有任务执行中"时前端弹窗提示。
+- [x] **演示预案 SQL**: `demo_plan_mysql_failover.sql` — 13 步 × 7 秒 = 91 秒跨 CAB-01/CAB-02 完整演示。
 
 ## 今日焦点
 

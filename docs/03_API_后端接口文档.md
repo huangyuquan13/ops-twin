@@ -94,8 +94,8 @@ Authorization: Bearer <token>
 **接口路径**: `GET /api/task/plan/list`
 
 **接口路径**: `POST /api/task/plan/reset/{planId}` ✔已实现
-- 说明：重置 FAILOVER/SCALE 执行后的预案状态。将预案 status 恢复为 1(启用)，同时还原执行过程中被修改的 service_host_map 绑定关系。DRILL 类型无需此操作 (DRILL 执行结束后自动恢复)。
-- 返回：`{ code: 200, data: "预案已重置" }`
+- 说明：支持 DRILL/FAILOVER/SCALE 三种类型重置。DRILL：解析 steps_json 中的 target 主机名，恢复为 status=1(健康) → 启用预案。FAILOVER/SCALE：从 topology JSON 重建 service_host_map 绑定 → 恢复主机 → 启用预案。
+- 返回：`{ code: 200, data: "已重置，恢复 N 台主机" }`
 - Params: `current, size, planName, serviceId, planType`
 - 说明：分页查询，支持按名称/服务/类型筛选，按优先级升序、创建时间降序排列。
 
@@ -111,7 +111,7 @@ Authorization: Bearer <token>
 ### 3.2 触发演练执行 ✔已实现
 **接口路径**: `POST /api/task/record/trigger/{planId}`
 - Params: `operator` (可选，默认 admin)
-- 说明：核心异步接口。根据 planId 创建流水记录并立即返回 recordId，随后在后台开启独立线程解析 steps_json 执行演练，并通过 WebSocket 实时推流日志。
+- 说明：核心异步接口。校验预案启用状态 → 检查无 RUNNING/PENDING 任务（有则拒绝）→ 创建流水记录 → 立即返回 recordId → 后台 @Async 线程解析 steps_json 逐步执行（支持 `waitMs` 自定义每步延迟）→ WebSocket 实时推流日志 + 广播 3D 事件。
 - 返回: `{ recordId: 42, wsPath: "/ws/task/log/42", planName: "..." }`
 
 ### 3.3 任务流水列表查询 ✔已实现

@@ -38,11 +38,12 @@ src/
     login/              # Login page
     dashboard/
       index.vue         # 3D digital twin: L1/L2/L3 drill-down, InstancedMesh rendering
-                        #   3D live linkage: camera auto-fly to cabinet, auto-L2, auto thermal mode,
-                        #   LED pulse animation (green→yellow→red), blade box emissive glow,
-                        #   cabinet wireframe color change via /ws/dashboard/events WebSocket
-                        #   Floating mini terminal panel auto-pops during drill execution
-                        #   sessionStorage state restore on "back to dashboard" from terminal
+                        #   Multi-cabinet L2: bounding box calculation frames ALL affected cabinets
+                        #   CSS2D drill host labels: blade-level hostname tags during execution
+                        #   Camera flies ONCE at drill start (no per-event jumping)
+                        #   LED pulse animation (green→yellow→red), blade box emissive glow
+                        #   Floating mini terminal auto-pops + sessionStorage cross-page state merge
+                        #   DRILL_REVERT: clears labels, restores visibility, stays at L2 (no L1 jump)
       analysis.vue      # ECharts analytics dashboard (KPI cards + pie + trend)
     assets/
       cabinet.vue       # Cabinet CRUD + button permission control (real)
@@ -63,9 +64,9 @@ src/
 
 | `tasks/index.vue` | Task hub dashboard: KPI stats cards (total plans/today runs/success rate) + plan list with quick [编排][执行] buttons. [设定方案] button jumps to strategy with auto-open add dialog. |
 | `assets/service.vue` | Left: service list. Right: Vue Flow canvas. Drag hosts from right sidebar onto canvas to build logical topology. Edges represent network links. |
-| `tasks/strategy.vue` | Plan CRUD. "执行" calls POST trigger → gets recordId → router.push to terminal. "编排" → workflow.vue. |
+| `tasks/strategy.vue` | Plan CRUD. "执行" → safety gate: checks for residual logs → confirm clearscreen → POST trigger → router.push to dashboard with recordId. "重置" shown when status=0 (DRILL/FAILOVER/SCALE all supported). "编排" → workflow.vue. |
 | `tasks/workflow.vue` | Left: action palette (STOP_NODE, HEALTH_CHECK, etc.). Center: Vue Flow canvas. Drag actions → configure target/waitMs in drawer → save as steps_json. |
-| `tasks/terminal.vue` | Reads recordId from query → WebSocket `ws://localhost:8080/ws/task/log/{id}` → real-time colored log stream (Xterm dark theme, semantic coloring). Terminate button sends `POST {id}/terminate`. "Back to dashboard" button restores 3D view state via sessionStorage. |
+| `tasks/terminal.vue` | Reads recordId from query → WS connect. Every log line saves to sessionStorage in REAL TIME. onMounted restores logs even without recordId. onUnmounted saves. "Back to dashboard" restores 3D L2 + labels + mini terminal via sessionStorage merge. |
 | `system/user.vue` | User CRUD + avatar upload. Buttons gated by user:add/edit/delete permissions. |
 | `system/role.vue` | Left: role list. Right: el-tree permission tree (menu+button). check-strictly + ensureParents linkage. |
 | `system/audit.vue` | Audit log table with operator/eventType search. 6 event types with color tags. |
@@ -89,7 +90,7 @@ src/
 - API calls go through the shared Axios instance in `api/request.ts`
 - Vue Flow pages must import CSS: `@vue-flow/core/dist/style.css` + theme/controls/minimap CSS
 - **Dual WebSocket**: terminal log stream (`/ws/task/log/{id}`) + 3D dashboard events (`/ws/dashboard/events`)
-- **sessionStorage**: dashboard navigation state (L2 level, thermal mode, camera position) persisted for cross-page restore
+- **sessionStorage**: `dashboardState` key — cross-page state (L2 view, camera, thermal, drill hostnames, miniTerm logs). Dashboard and terminal both read/write with merge (`...prev`) to prevent overwrite. Terminal saves logs in real-time per WebSocket message. Restore always attempts L2 + labels even when `active` is false.
 
 ## Backend API Contract
 

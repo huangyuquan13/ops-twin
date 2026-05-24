@@ -30,11 +30,13 @@
         <div class="header-content">
           <!-- 引入全局用户头像 -->
           <!-- 直接使用 Store 提供的加工好的头像地址 -->
-          <el-avatar 
-            :size="36" 
-            :src="userStore.avatarUrl" 
+          <el-avatar
+            :size="36"
+            :src="userStore.avatarUrl"
             class="user-avatar"
-          />
+          >
+            <el-icon :size="18"><UserFilled /></el-icon>
+          </el-avatar>
           
           <div class="user-info">
             <span class="username">{{ userStore.userInfo.username }}</span>
@@ -60,6 +62,7 @@
 <script setup lang="ts">
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { UserFilled } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { computed } from 'vue'
 

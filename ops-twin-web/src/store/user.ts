@@ -30,7 +30,7 @@ export const useUserStore = defineStore('user', () => {
 
   const isAdmin = computed(() => userInfo.value.roleId === 1)
   const avatarUrl = computed(() => {
-    if (!userInfo.value.avatar) return 'https://cube.elemecdn.com/e/fd/0fc7d20532fdaf769a25683617711png.png'
+    if (!userInfo.value.avatar) return ''
     return `${import.meta.env.VITE_API_BASE}${userInfo.value.avatar}`
   })
 

@@ -23,7 +23,7 @@ All 10 stages complete:
 | 3.5 | Task Center UX (task hub dashboard, param guard, plan linkage) | DONE |
 | 4 | System Admin (JWT + bcrypt, RBAC roles, audit logging, button permissions) | DONE |
 | 5 | Real Execution Engine (DB status change, service_host_map CRUD, dual WS) | DONE |
-| 6 | Drill Linkage (3D live color, floating terminal, DRILL auto-revert) | DONE |
+| 6 | Drill Linkage (3D live color, floating terminal, multi-cab L2, CSS2D labels) | DONE |
 | 7 | Dashboard Enhancement (ECharts KPI, responsive layout) | DONE |
 | 8 | AOP Audit Logging (@AuditLog annotation + aspect) | DONE |
 | 9 | Docker (Compose: MySQL + Spring Boot + Nginx) | DONE |

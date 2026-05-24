@@ -32,12 +32,12 @@
         <!-- 头像展示列：重点！ -->
         <el-table-column label="头像" width="100" align="center">
           <template #default="scope">
-            <el-avatar 
-              :size="40" 
-              :src="getAvatarUrl(scope.row.avatar)" 
+            <el-avatar
+              :size="40"
+              :src="scope.row.avatar && !scope.row.avatar.startsWith('http') ? getAvatarUrl(scope.row.avatar) : ''"
               shape="square"
             >
-              <img src="https://cube.elemecdn.com/e/fd/0fc7d20532fdaf769a25683617711png.png" />
+              <el-icon :size="24"><UserFilled /></el-icon>
             </el-avatar>
           </template>
         </el-table-column>
@@ -90,8 +90,8 @@
             :before-upload="beforeAvatarUpload"
           >
             <!-- 回显刚刚上传成功的头像 -->
-            <img v-if="form.avatar" :src="getAvatarUrl(form.avatar)" class="avatar-preview" />
-            <el-icon v-else class="avatar-uploader-icon"><Plus /></el-icon>
+            <img v-if="isCustomAvatar(form.avatar)" :src="getAvatarUrl(form.avatar)" class="avatar-preview" />
+            <el-icon v-else class="avatar-uploader-icon" :size="32"><Plus /></el-icon>
           </el-upload>
           <div class="upload-tip">建议上传 1:1 比例的正方形图片，大小不超过 2MB</div>
         </el-form-item>
@@ -123,7 +123,7 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, UserFilled } from '@element-plus/icons-vue'
 import request from '@/api/request' // 使用我们封装好的 Axios
 import { useUserStore } from '@/store/user'
 
@@ -160,9 +160,15 @@ const rules = {
 // 核心逻辑：计算头像真实访问地址
 const getAvatarUrl = (path: string) => {
   if (!path) return ''
-  // 假设后端运行在 8080 端口，且静态资源映射配置已生效
-  // 注意：在正式生产环境中，这里应该是一个域名或者通过环境变量配置
+  if (path.startsWith('http://') || path.startsWith('https://')) return path
   return `${import.meta.env.VITE_API_BASE}${path}`
+}
+
+// 判断是否为自定义上传的头像（相对路径），而非外部默认头像
+const isCustomAvatar = (path: string) => {
+  if (!path) return false
+  if (path.startsWith('http://') || path.startsWith('https://')) return false
+  return true
 }
 
 // =======================
