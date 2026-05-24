@@ -23,8 +23,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -154,7 +152,6 @@ public class TaskExecutionEngine {
             }
 
             boolean isDrill = "DRILL".equals(plan.getPlanType());
-            Map<Long, Integer> hostRevertMap = new HashMap<>(); // DRILL 模式记录原始状态
 
             int currentExecIndex = 1;
             for (int i = 0; i < steps.size(); i++) {
@@ -174,12 +171,11 @@ public class TaskExecutionEngine {
                     pushLog(rid, "[WARN]  用户已终止演练任务");
                     pushLog(rid, "[WARN] ═══════════════════════════════════════════");
                     pushLog(rid, "");
-                    revertDrillChanges(hostRevertMap, rid);
                     updateStatus(recordId, "CANCELLED", System.currentTimeMillis() - startMs, "用户手动终止");
                     return;
                 }
 
-                runStep(rid, step, currentExecIndex++, realStepCount, hostRevertMap, isDrill, plan);
+                runStep(rid, step, currentExecIndex++, realStepCount, isDrill, plan);
             }
 
             // 所有类型预案执行完成后统一禁用，需手动点击"重置"恢复
@@ -253,7 +249,7 @@ public class TaskExecutionEngine {
 
     /** 执行单个步骤：查找目标主机 → 更新数据库状态 → 广播给终端 + 3D 大屏 */
     private void runStep(String rid, JSONObject step, int current, int total,
-                         Map<Long, Integer> hostRevertMap, boolean isDrill, TaskPlan plan)
+                         boolean isDrill, TaskPlan plan)
             throws InterruptedException {
         String action  = step.getString("action");
         String target  = step.getString("target");
@@ -272,10 +268,6 @@ public class TaskExecutionEngine {
 
         if (host != null && newStatus != null) {
             Integer oldStatus = host.getStatus();
-            // DRILL 模式：记录原始状态，结束后恢复
-            if (isDrill && !hostRevertMap.containsKey(host.getId())) {
-                hostRevertMap.put(host.getId(), oldStatus);
-            }
 
             // 更新主机状态
             host.setStatus(newStatus);
@@ -337,30 +329,6 @@ public class TaskExecutionEngine {
         String timestamp = LocalDateTime.now().format(LOG_FMT);
         String line = message.isBlank() ? "" : String.format("[%s] %s", timestamp, message);
         wsHandler.broadcast(recordId, line);
-    }
-
-    /** DRILL 模式下恢复所有被修改的主机状态 */
-    private void revertDrillChanges(Map<Long, Integer> hostRevertMap, String rid) {
-        if (hostRevertMap.isEmpty()) return;
-        pushLog(rid, "");
-        pushLog(rid, "[INFO] ──────────────────────────────────────────────");
-        pushLog(rid, "[INFO] 【DRILL 恢复】正在恢复被演练修改的主机状态...");
-
-        for (Map.Entry<Long, Integer> entry : hostRevertMap.entrySet()) {
-            AssetHost host = assetHostMapper.selectById(entry.getKey());
-            if (host != null) {
-                Integer oldStatus = entry.getValue();
-                host.setStatus(oldStatus);
-                assetHostMapper.updateById(host);
-                pushLog(rid, String.format("  └─ %s 状态恢复: → %d", host.getHostname(), oldStatus));
-
-                String event = String.format(
-                    "{\"type\":\"HOST_STATUS\",\"hostId\":%d,\"hostname\":\"%s\",\"status\":%d,\"action\":\"DRILL_REVERT\"}",
-                    host.getId(), host.getHostname(), oldStatus);
-                DashboardWebSocketHandler.broadcast(event);
-            }
-        }
-        pushLog(rid, "[INFO] DRILL 演练完成，所有主机状态已恢复");
     }
 
     private void updateStatus(Long recordId, String status, Long durationMs, String resultMsg) {

@@ -39,7 +39,7 @@
       </el-button>
       <Transition name="fade">
         <el-button
-          v-if="currentView !== 'L1'"
+          v-if="currentView !== 'L1' && !(miniTerminal.visible && currentView === 'L2')"
           type="warning"
           size="large"
           @click="goBack"
@@ -150,7 +150,6 @@
           <span class="mini-term-id">流水 #{{ miniTerminal.recordId }}</span>
           <div class="mini-term-actions">
             <el-button link size="small" @click="goFullTerminal">展开全屏</el-button>
-            <el-button link size="small" @click="closeMiniTerminal">✕</el-button>
           </div>
         </div>
         <div class="mini-term-body" ref="miniTerminalRef">
@@ -198,7 +197,7 @@ const miniTerminal = ref({
 const miniLogs = ref<string[]>([]);
 const miniTerminalRef = ref<HTMLElement | null>(null);
 let miniWs: WebSocket | null = null;
-let lastExecCabinetId = '';  // 记死执行目标的机柜，goBack 回 L1 后也不丢
+let lastExecCabinetIds: string[] = [];  // 记死执行目标的所有机柜，跨页面恢复用
 const drillHostLabels: any[] = [];  // 演练时挂载的 CSS2D 主机名标签
 let drillHostnames: string[] = [];   // 当前演练涉及的主机名（用于切页恢复）
 
@@ -242,15 +241,14 @@ const closeMiniTerminal = () => {
   }
   miniTerminal.value.visible = false;
   if (miniWs) { miniWs.close(); miniWs = null; }
-  lastExecCabinetId = '';
 };
 
 const goFullTerminal = () => {
   if (miniWs) miniWs.close();
-  const cabinetId = activeCabinet?.userData?.cabinetId || '';
+  const cabinetIds = [...lastExecCabinetIds];
   sessionStorage.setItem('dashboardState', JSON.stringify({
     view: currentView.value,
-    cabinetId,
+    cabinetIds,
     thermalOn: isThermalMode.value,
     camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
     camTarget: { x: controls.target.x, y: controls.target.y, z: controls.target.z },
@@ -341,7 +339,7 @@ const flyToTargetCabinets = (cabIds: string[]) => {
   });
   if (targets.length === 0) return;
 
-  lastExecCabinetId = cabIds[0];
+  lastExecCabinetIds = [...cabIds];
   l1CameraState.position.copy(camera.position);
   l1CameraState.target.copy(controls.target);
 
@@ -742,7 +740,7 @@ const onPointerDown = (event: MouseEvent) => {
 const onCanvasClick = (event: MouseEvent) => {
   if (!threeContainer.value) return;
 
-  // 【极其关键】区分“拖拽旋转”与“精确点击”
+  // 【极其关键】区分"拖拽旋转"与"精确点击"
   // 如果鼠标按下和松开的位移超过 3 个像素，说明用户在拖拽视角，直接忽略点击！
   if (
     Math.abs(event.clientX - pointerDownPos.x) > 3 ||
@@ -778,6 +776,11 @@ const onCanvasClick = (event: MouseEvent) => {
       }
 
       if (current) {
+        // 执行中：只允许点击演习涉及的刀片
+        if (miniTerminal.visible) {
+          const hostname = current.userData?.parentHost?.hostname;
+          if (hostname && !drillHostnames.includes(hostname)) return;
+        }
         currentView.value = "L3";
         activeBladeData.value = current.userData;
 
@@ -797,11 +800,17 @@ const onCanvasClick = (event: MouseEvent) => {
       }
 
       if (current) {
+        // 执行中：只允许点击演习涉及的机柜
+        if (miniTerminal.visible) {
+          const cabId = current.userData?.cabinetId;
+          if (!lastExecCabinetIds.includes(cabId)) return;
+        }
+
         currentView.value = "L2";
         activeCabinet = current;
         selectedCabinet.value = current.userData;
 
-        // 【核心】：记住当前 L1 的视角状态，以便“返回 L1”时精准还原
+        // 【核心】：记住当前 L1 的视角状态，以便"返回 L1"时精准还原
         l1CameraState.position.copy(camera.position);
         l1CameraState.target.copy(controls.target);
 
@@ -864,6 +873,16 @@ const goBack = () => {
 
     if (activeCabinet) {
       activeCabinet = null;
+    }
+
+    // 通知 sessionStorage：执行视图已退出，下次回来不再自动弹小终端
+    const saved = sessionStorage.getItem('dashboardState');
+    if (saved) {
+      try {
+        const state = JSON.parse(saved);
+        state.active = false;
+        sessionStorage.setItem('dashboardState', JSON.stringify(state));
+      } catch (_) {}
     }
   }
 };
@@ -1042,8 +1061,8 @@ onMounted(async () => {
       const state = JSON.parse(saved);
       setTimeout(() => {
         if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
-        if (state.cabinetId) {
-          flyToTargetCabinets([state.cabinetId]);
+        if (state.cabinetIds?.length) {
+          flyToTargetCabinets(state.cabinetIds);
         }
         if (state.drillHostnames?.length) {
           drillHostnames = state.drillHostnames;
@@ -1067,12 +1086,12 @@ onUnmounted(() => {
   // 离开大屏前保存状态（总是保存，合并已有的 dashboardState 保留终端日志）
   const saved = sessionStorage.getItem('dashboardState');
   const prev = saved ? JSON.parse(saved) : {};
-  const cabinetId = lastExecCabinetId || activeCabinet?.userData?.cabinetId || '';
+  const cabinetIds = lastExecCabinetIds.length > 0 ? [...lastExecCabinetIds] : (prev.cabinetIds || []);
   sessionStorage.setItem('dashboardState', JSON.stringify({
     ...prev,
     active: miniTerminal.value.visible || prev.active || false,
     view: currentView.value,
-    cabinetId,
+    cabinetIds,
     thermalOn: isThermalMode.value,
     drillHostnames: [...drillHostnames],
     camPos: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
