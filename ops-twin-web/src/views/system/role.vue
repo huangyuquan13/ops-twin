@@ -26,12 +26,15 @@
         </div>
         <div v-if="!activeRole" class="empty-hint">请先选择左侧角色</div>
         <div v-else class="perm-tree-wrap">
-          <el-checkbox
-            v-model="selectAll"
-            :indeterminate="isIndeterminate"
-            @change="handleSelectAll"
-            style="margin-bottom: 12px; font-weight: 600;"
-          >全选/全不选</el-checkbox>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <el-checkbox
+              v-model="selectAll"
+              :indeterminate="isIndeterminate"
+              @change="handleSelectAll"
+              style="font-weight: 600;"
+            >全选/全不选</el-checkbox>
+            <el-button size="small" :icon="Plus" @click="handleAddPerm()">新增根节点</el-button>
+          </div>
           <el-tree
             ref="treeRef"
             :data="permTree"
@@ -44,19 +47,57 @@
             @check="onCheck"
           >
             <template #default="{ data }">
-              <span style="display: flex; align-items: center; gap: 8px;">
-                <span>{{ data.title }}</span>
-                <el-tag v-if="data.type === 2" size="small" type="info">按钮</el-tag>
-                <el-tag v-else size="small" type="primary">菜单</el-tag>
-                <span v-if="data.permissionCode" style="color: #909399; font-size: 11px;">
-                  {{ data.permissionCode }}
+              <div class="perm-node">
+                <span style="display: flex; align-items: center; gap: 8px; flex: 1;">
+                  <span>{{ data.title }}</span>
+                  <el-tag v-if="data.type === 2" size="small" type="info">按钮</el-tag>
+                  <el-tag v-else size="small" type="primary">菜单</el-tag>
+                  <span v-if="data.permissionCode" style="color: #909399; font-size: 11px;">
+                    {{ data.permissionCode }}
+                  </span>
                 </span>
-              </span>
+                <span class="perm-actions">
+                  <el-button link size="small" @click.stop="handleAddPerm(data)" :icon="Plus">子节点</el-button>
+                  <el-button link size="small" @click.stop="handleEditPerm(data)" :icon="Edit">编辑</el-button>
+                  <el-button link size="small" type="danger" @click.stop="handleDeletePerm(data)" :icon="Delete">删除</el-button>
+                </span>
+              </div>
             </template>
           </el-tree>
         </div>
       </div>
     </div>
+
+    <!-- 新增/编辑权限节点弹窗 -->
+    <el-dialog :title="permDialogTitle" v-model="permDialogVisible" width="420px">
+      <el-form :model="permForm" :rules="permRules" ref="permFormRef" label-width="90px">
+        <el-form-item label="节点标题" prop="title">
+          <el-input v-model="permForm.title" placeholder="如：预案方案库" />
+        </el-form-item>
+        <el-form-item label="节点类型" prop="type">
+          <el-radio-group v-model="permForm.type">
+            <el-radio :value="1">菜单</el-radio>
+            <el-radio :value="2">按钮</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="路由路径" v-if="permForm.type === 1">
+          <el-input v-model="permForm.path" placeholder="如：/tasks/strategy" />
+        </el-form-item>
+        <el-form-item label="权限编码" v-if="permForm.type === 2">
+          <el-input v-model="permForm.permissionCode" placeholder="如：strategy:add" />
+        </el-form-item>
+        <el-form-item label="图标">
+          <el-input v-model="permForm.icon" placeholder="如：Setting" />
+        </el-form-item>
+        <el-form-item label="排序">
+          <el-input-number v-model="permForm.sort" :min="0" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="permDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitPermForm">确定</el-button>
+      </template>
+    </el-dialog>
 
     <!-- 新增/编辑角色弹窗 -->
     <el-dialog :title="dialogTitle" v-model="dialogVisible" width="420px">
@@ -82,8 +123,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Plus } from '@element-plus/icons-vue';
+import { Plus, Edit, Delete } from '@element-plus/icons-vue';
 import request from '@/api/request';
+import { useUserStore } from '@/store/user';
+
+const userStore = useUserStore();
 
 const roleList = ref<any[]>([]);
 const activeRoleId = ref('');
@@ -120,6 +164,52 @@ const buildTree = (flat: any[]) => {
     }
   });
   return roots;
+};
+
+// 权限节点 CRUD
+const permDialogVisible = ref(false);
+const permDialogTitle = ref('新增权限节点');
+const permFormRef = ref();
+const permForm = ref<any>({ title: '', type: 1, path: '', permissionCode: '', icon: '', sort: 0, parentId: null, id: null });
+const permRules = {
+  title: [{ required: true, message: '请输入节点标题' }],
+  type: [{ required: true, message: '请选择节点类型' }],
+};
+
+const handleAddPerm = (parent?: any) => {
+  permDialogTitle.value = parent ? `添加子节点 · ${parent.title}` : '新增权限节点';
+  permForm.value = { title: '', type: 1, path: '', permissionCode: '', icon: '', sort: 0, parentId: parent?.id ?? null, id: null };
+  permDialogVisible.value = true;
+};
+
+const handleEditPerm = (node: any) => {
+  permDialogTitle.value = `编辑 · ${node.title}`;
+  permForm.value = { ...node };
+  permDialogVisible.value = true;
+};
+
+const handleDeletePerm = (node: any) => {
+  ElMessageBox.confirm(`确认删除「${node.title}」及其所有子节点？`, '警告', { type: 'warning' }).then(async () => {
+    const res: any = await request.delete(`/api/system/permission/delete/${node.id}`);
+    if (res.code === 200) {
+      ElMessage.success('删除成功');
+      fetchAllPerms();
+      if (activeRoleId.value) handleSelectRole(activeRoleId.value);
+    }
+  }).catch(() => {});
+};
+
+const submitPermForm = async () => {
+  if (!permFormRef.value) return;
+  await permFormRef.value.validate(async (valid: boolean) => {
+    if (!valid) return;
+    const res: any = await request.post('/api/system/permission/save', permForm.value);
+    if (res.code === 200) {
+      ElMessage.success(permForm.value.id ? '更新成功' : '新增成功');
+      permDialogVisible.value = false;
+      fetchAllPerms();
+    }
+  });
 };
 
 const fetchRoles = async () => {
@@ -231,6 +321,18 @@ const onCheck = (currentNode: any, data: any) => {
   checkedPermIds.value = ids;
 };
 
+const refreshCurrentUserMenus = async () => {
+  const roleId = userStore.userInfo?.roleId;
+  if (!roleId) return;
+  try {
+    const permRes: any = await request.get('/api/system/menus', { params: { roleId } });
+    if (permRes.code === 200) {
+      userStore.setPermissions(permRes.data.permissions || []);
+      userStore.setMenus(permRes.data.menus || []);
+    }
+  } catch { /* 降级 */ }
+};
+
 const savePermissions = async () => {
   if (!activeRoleId.value) return;
   saving.value = true;
@@ -240,6 +342,10 @@ const savePermissions = async () => {
     });
     if (res.code === 200) {
       ElMessage.success('权限保存成功');
+      // 如果改的是当前用户自己的角色，刷新全局 menus 和权限
+      if (String(activeRoleId.value) === String(userStore.userInfo?.roleId)) {
+        await refreshCurrentUserMenus();
+      }
     }
   } finally { saving.value = false; }
 };
@@ -302,4 +408,9 @@ onMounted(() => {
 .panel-actions { display: flex; gap: 8px; }
 .perm-tree-wrap { margin-top: 8px; }
 .empty-hint { text-align: center; color: #909399; margin-top: 80px; }
+
+/* 权限树节点 hover 操作按钮 */
+.perm-node { display: flex; align-items: center; width: 100%; }
+.perm-actions { display: none; margin-left: auto; white-space: nowrap; }
+.perm-node:hover .perm-actions { display: inline-flex; gap: 2px; }
 </style>

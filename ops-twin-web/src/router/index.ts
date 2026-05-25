@@ -11,6 +11,10 @@ const routes: Array<RouteRecordRaw> = [
     component: () => import("@/views/login/index.vue"),
   },
   {
+    path: "/403",
+    component: () => import("@/views/error/403.vue"),
+  },
+  {
     path: "/",
     component: Layout,
     redirect: "/dashboard/index",
@@ -56,7 +60,7 @@ const routes: Array<RouteRecordRaw> = [
       {
         path: "tasks/workflow",
         component: () => import("@/views/tasks/workflow.vue"),
-        meta: { title: "演练编排", hidden: true },
+        meta: { title: "演练编排", hidden: true, permissionParent: "/tasks/strategy" },
       },
       {
         path: "tasks/terminal",
@@ -94,8 +98,6 @@ router.beforeEach((to, _from, next) => {
   //双重否定转布尔值 与运算 全1才为真
   const isLogin = !!(token && token !== "null" && token !== "undefined");
 
-  // console.log(`[路由守卫] 目标: ${to.path}, 已登录: ${isLogin}`)
-
   // 1. 如果去的是登录页
   if (to.path === "/login") {
     if (isLogin) {
@@ -103,16 +105,41 @@ router.beforeEach((to, _from, next) => {
     } else {
       next(); // 未登录则放行
     }
+    return;
   }
-  // 2. 如果去的是非登录页（受保护页面）
-  else {
-    if (isLogin) {
-      next(); // 已登录则放行
-    } else {
-      // console.warn('[路由守卫] 未检测到有效 Token，拦截并跳转至登录页')
-      next("/login"); // 未登录则强制跳转登录
-    }
+
+  // 2. 如果未登录 → 拦截
+  if (!isLogin) {
+    next("/login");
+    return;
   }
+
+  // 3. 已登录 → 菜单级权限校验
+  // 白名单：根路径只做 redirect、403 不限权限
+  const whiteList = ["/", "/403"];
+  if (whiteList.includes(to.path)) {
+    next();
+    return;
+  }
+
+  // 从 localStorage 获取该用户能访问的菜单路径列表
+  const menus = JSON.parse(localStorage.getItem("userMenus") || "[]");
+  const allowedPaths: string[] = menus.map((m: any) => m.path);
+
+  if (allowedPaths.includes(to.path)) {
+    next();
+    return;
+  }
+
+  // 隐藏路由的权限继承：如果当前路径有 permissionParent，且父路径在 menus 中 → 放行
+  const parentPath = to.meta?.permissionParent as string | undefined;
+  if (parentPath && allowedPaths.includes(parentPath)) {
+    next();
+    return;
+  }
+
+  // 无权限 → 403
+  next("/403");
 });
 
 export default router;
