@@ -17,6 +17,7 @@ service.interceptors.request.use(
     error => Promise.reject(error)
 )
 // 响应拦截器
+let isRedirecting = false // 防止401并发时重复跳转登录页
 service.interceptors.response.use(
     response => {
         const res = response.data
@@ -29,7 +30,13 @@ service.interceptors.response.use(
     error => {
         if (error.response && error.response.status === 401) {
             localStorage.removeItem('token')
-            router.push('/login')
+            // 401 已触发登录页跳转，不再弹"网络请求失败"
+            // 加锁防止并发请求重复调用 router.push
+            if (!isRedirecting) {
+                isRedirecting = true
+                router.push('/login')
+            }
+            return Promise.reject(error)
         }
         ElMessage.error('网络请求失败')
         return Promise.reject(error)
