@@ -60,7 +60,11 @@ const routes: Array<RouteRecordRaw> = [
       {
         path: "tasks/workflow",
         component: () => import("@/views/tasks/workflow.vue"),
-        meta: { title: "演练编排", hidden: true, permissionParent: "/tasks/strategy" },
+        meta: {
+          title: "演练编排",
+          hidden: true,
+          permissionParent: "/tasks/strategy",
+        },
       },
       {
         path: "tasks/terminal",
@@ -115,7 +119,7 @@ router.beforeEach((to, _from, next) => {
   }
 
   // 3. 已登录 → 菜单级权限校验
-  // 白名单：根路径只做 redirect、403 不限权限
+  // 白名单：/ /403直接放行
   const whiteList = ["/", "/403"];
   if (whiteList.includes(to.path)) {
     next();
@@ -131,7 +135,7 @@ router.beforeEach((to, _from, next) => {
     return;
   }
 
-  // 隐藏路由的权限继承：如果当前路径有 permissionParent，且父路径在 menus 中 → 放行
+  // 演练编排是预案方案库的子页面，只要有预案方案库权限就能访问
   const parentPath = to.meta?.permissionParent as string | undefined;
   if (parentPath && allowedPaths.includes(parentPath)) {
     next();

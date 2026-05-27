@@ -42,6 +42,8 @@ images/
 *~
 .gstack/
 ops-twin-web/.gstack/
+.understand-anything/
+**/.codegraph/
 
 # === OS ===
 Thumbs.db

@@ -4,18 +4,21 @@
     <div class="bg-layers">
       <!-- 地板网格 -->
       <div class="floor-grid"></div>
-      <!-- 扫描线 -->
-      <div class="scan-line"></div>
-      <!-- 粒子光点 -->
-      <div class="particles">
-        <span v-for="i in 40" :key="i" class="dot" :style="randomDot(i)"></span>
-      </div>
+      <!-- 水波纹粒子画布 -->
+      <canvas ref="particleCanvas" class="ripple-canvas"></canvas>
       <!-- 左侧服务器立柱装饰 -->
       <div class="server-pillar pillar-left">
-        <div class="led-row" v-for="i in 8" :key="'L'+i"><span class="led" :class="i % 3 === 0 ? 'led-amber' : 'led-cyan'"></span></div>
+        <div class="led-row" v-for="i in 8" :key="'L' + i">
+          <span
+            class="led"
+            :class="i % 3 === 0 ? 'led-amber' : 'led-cyan'"
+          ></span>
+        </div>
       </div>
       <div class="server-pillar pillar-right">
-        <div class="led-row" v-for="i in 6" :key="'R'+i"><span class="led" :class="i === 1 ? 'led-amber' : 'led-blue'"></span></div>
+        <div class="led-row" v-for="i in 6" :key="'R' + i">
+          <span class="led" :class="i === 1 ? 'led-amber' : 'led-blue'"></span>
+        </div>
       </div>
     </div>
 
@@ -66,13 +69,11 @@
           />
         </div>
 
-        <el-button
-          class="login-btn"
-          :loading="loading"
-          @click="handleLogin"
-        >
+        <el-button class="login-btn" :loading="loading" @click="handleLogin">
           <span class="btn-content">
-            <span class="btn-label">{{ loading ? '验证中...' : '初始化连接' }}</span>
+            <span class="btn-label">{{
+              loading ? "验证中..." : "初始化连接"
+            }}</span>
             <span class="btn-arrow">→</span>
           </span>
         </el-button>
@@ -90,48 +91,221 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { User, Lock } from '@element-plus/icons-vue'
-import request from '@/api/request'
-import { ElMessage } from 'element-plus'
-import { useUserStore } from '@/store/user'
+import { ref, onMounted, onUnmounted } from "vue";
+import { useRouter } from "vue-router";
+import { User, Lock } from "@element-plus/icons-vue";
+import request from "@/api/request";
+import { ElMessage } from "element-plus";
+import { useUserStore } from "@/store/user";
 
-const router = useRouter()
-const userStore = useUserStore()
-const loading = ref(false)
-const loginForm = ref({ username: 'admin', password: '' })
+const router = useRouter();
+const userStore = useUserStore();
+const loading = ref(false);
+const loginForm = ref({ username: "admin", password: "" });
 
-const randomDot = (i: number) => ({
-  left: `${(i * 73 + 17) % 100}%`,
-  top: `${(i * 47 + 23) % 100}%`,
-  animationDelay: `${(i * 0.7) % 6}s`,
-  animationDuration: `${2 + (i % 3)}s`,
-})
+// ── Water Ripple Particle System ──
+const particleCanvas = ref<HTMLCanvasElement | null>(null);
+let animId = 0;
+let W = 0,
+  H = 0;
+
+const COLORS = [
+  "#00e5ff",
+  "#409eff",
+  "#ffb74d",
+  "#00e5ff",
+  "#409eff",
+  "#00e5ff",
+  "#00e5ff",
+  "#409eff",
+];
+const SPACING = 24;
+const RIPPLE_RADIUS = 320;
+//定义粒子
+interface Particle {
+  rx: number;
+  ry: number;
+  x: number;
+  y: number;
+  len: number;
+  angle: number;
+  color: string;
+}
+let particles: Particle[] = [];
+let mouse = { x: -9999, y: -9999 };
+let mouseTarget = { x: -9999, y: -9999 };
+//鼠标移动留下的涟漪轨迹，life 控制淡出，超过 1.3 秒移除
+let rippleTrail: { x: number; y: number; life: number }[] = [];
+
+function waterHeight(r: number) {
+  if (r < 0.01) r = 0.01;
+  const dip = -0.75 * Math.exp((-r * r) / (2 * 38 * 38));
+  const ring1 = 0.5 * Math.exp((-(r - 78) * (r - 78)) / (2 * 18 * 18));
+  const ring2 = 0.2 * Math.exp((-(r - 142) * (r - 142)) / (2 * 26 * 26));
+  return dip + ring1 + ring2;
+}
+
+function buildGrid() {
+  particles = [];
+  const cols = Math.ceil(W / SPACING) + 1;
+  const rows = Math.ceil(H / SPACING) + 1;
+  const ox = (W - (cols - 1) * SPACING) / 2;
+  const oy = (H - (rows - 1) * SPACING) / 2;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      particles.push({
+        rx: ox + c * SPACING + (Math.random() - 0.5) * 8,
+        ry: oy + r * SPACING + (Math.random() - 0.5) * 8,
+        x: 0,
+        y: 0,
+        len: 3 + Math.random() * 9,
+        angle: ((-90 + (Math.random() - 0.5) * 50) * Math.PI) / 180,
+        color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      });
+    }
+  }
+  particles.forEach((p) => {
+    p.x = p.rx;
+    p.y = p.ry;
+  });
+}
+
+// 鼠标移动 → 更新目标坐标 + 推入涟漪轨迹
+function onMouseMove(e: MouseEvent) {
+  mouseTarget.x = e.clientX;
+  mouseTarget.y = e.clientY;
+  rippleTrail.push({ x: e.clientX, y: e.clientY, life: 0 });
+  if (rippleTrail.length > 35) rippleTrail.shift();
+}
+
+// 逐帧绘制：背景残留(拖尾效果) → 鼠标缓动 → 涟漪影响粒子位移+角度+透明度
+function draw(ctx: CanvasRenderingContext2D) {
+  // 半透明黑色覆盖 → 旧帧逐渐淡出，产生拖尾效果
+  ctx.fillStyle = "rgba(6,11,20,0.58)";
+  ctx.fillRect(0, 0, W, H);
+
+  // 鼠标缓动插值 → 平滑跟随(0.06 系数越小越慢越柔和)
+  mouse.x += (mouseTarget.x - mouse.x) * 0.06;
+  mouse.y += (mouseTarget.y - mouse.y) * 0.06;
+
+  for (let i = rippleTrail.length - 1; i >= 0; i--) {
+    rippleTrail[i].life += 0.016;
+    if (rippleTrail[i].life > 1.3) rippleTrail.splice(i, 1);
+  }
+
+  for (const p of particles) {
+    let hTotal = 0,
+      dxTotal = 0,
+      dyTotal = 0;
+    let inRipple = false;
+
+    const dmx = p.rx - mouse.x,
+      dmy = p.ry - mouse.y;
+    const dm = Math.sqrt(dmx * dmx + dmy * dmy);
+    if (dm < RIPPLE_RADIUS) {
+      inRipple = true;
+      const h = waterHeight(dm);
+      hTotal += h;
+      if (dm > 0.01) {
+        dxTotal += (dmx / dm) * h * 32;
+        dyTotal += (dmy / dm) * h * 32;
+      }
+    }
+
+    for (const rip of rippleTrail) {
+      const drx = p.rx - rip.x,
+        dry = p.ry - rip.y;
+      const dr = Math.sqrt(drx * drx + dry * dry);
+      if (dr < RIPPLE_RADIUS) {
+        inRipple = true;
+        const decay = 1 - rip.life / 1.3;
+        const h = waterHeight(dr) * decay * 0.5;
+        hTotal += h;
+        if (dr > 0.01) {
+          dxTotal += (drx / dr) * h * 32;
+          dyTotal += (dry / dr) * h * 32;
+        }
+      }
+    }
+
+    if (!inRipple) {
+      p.x += (p.rx - p.x) * 0.15;
+      p.y += (p.ry - p.y) * 0.15;
+      continue;
+    }
+
+    p.x += (p.rx + dxTotal - p.x) * 0.3;
+    p.y += (p.ry + dyTotal - p.y) * 0.3;
+
+    const clampedH = Math.max(-0.6, Math.min(0.6, hTotal));
+    const absH = Math.abs(clampedH);
+    const tiltAngle = p.angle + clampedH * 0.5;
+    const hl = p.len * (1 + clampedH * 0.6);
+    const halfLen = hl / 2;
+    const cosA = Math.cos(tiltAngle),
+      sinA = Math.sin(tiltAngle);
+
+    ctx.beginPath();
+    ctx.moveTo(p.x - cosA * halfLen, p.y - sinA * halfLen);
+    ctx.lineTo(p.x + cosA * halfLen, p.y + sinA * halfLen);
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = Math.max(0.6, 1.4 + clampedH * 0.8);
+    ctx.globalAlpha = 0.08 + absH * 0.75;
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+  animId = requestAnimationFrame(() => draw(ctx));
+}
+
+onMounted(() => {
+  const el = particleCanvas.value;
+  if (!el) return;
+  W = el.width = window.innerWidth;
+  H = el.height = window.innerHeight;
+  buildGrid();
+  const ctx = el.getContext("2d");
+  if (ctx) draw(ctx);
+  window.addEventListener("resize", () => {
+    W = el.width = window.innerWidth;
+    H = el.height = window.innerHeight;
+    buildGrid();
+  });
+  window.addEventListener("mousemove", onMouseMove);
+});
+
+onUnmounted(() => {
+  cancelAnimationFrame(animId);
+  window.removeEventListener("mousemove", onMouseMove);
+});
 
 const handleLogin = async () => {
-  if (!loginForm.value.password) return ElMessage.warning('请输入密码')
-  loading.value = true
+  if (!loginForm.value.password) return ElMessage.warning("请输入密码");
+  loading.value = true;
   try {
-    const res: any = await request.post('/api/auth/login', loginForm.value)
-    localStorage.setItem('token', res.data.token)
-    userStore.setUserInfo(res.data.user)
-    const roleId = res.data.user?.roleId || 1
+    const res: any = await request.post("/api/auth/login", loginForm.value);
+    localStorage.setItem("token", res.data.token);
+    userStore.setUserInfo(res.data.user);
+    const roleId = res.data.user?.roleId || 1;
     try {
-      const permRes: any = await request.get('/api/system/menus', { params: { roleId } })
+      const permRes: any = await request.get("/api/system/menus", {
+        params: { roleId },
+      });
       if (permRes.code === 200) {
-        userStore.setPermissions(permRes.data.permissions || [])
-        userStore.setMenus(permRes.data.menus || [])
+        userStore.setPermissions(permRes.data.permissions || []);
+        userStore.setMenus(permRes.data.menus || []);
       }
-    } catch { /* 降级 */ }
-    ElMessage.success('身份验证成功，正在同步孪生空间...')
-    router.push('/')
+    } catch {
+      /* 降级 */
+    }
+    ElMessage.success("身份验证成功，正在同步孪生空间...");
+    router.push("/");
   } catch (err) {
-    console.error(err)
+    console.error(err);
   } finally {
-    loading.value = false
+    loading.value = false;
   }
-}
+};
 </script>
 
 <style scoped>
@@ -148,75 +322,103 @@ const handleLogin = async () => {
   background: #060b14;
   overflow: hidden;
   position: relative;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-family:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
 }
 
 /* --- 背景层 --- */
-.bg-layers { position: absolute; inset: 0; pointer-events: none; }
+.bg-layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 
 /* 地板网格 — 透视纵深 */
 .floor-grid {
-  position: absolute; bottom: 0; left: 0; right: 0; height: 55%;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 55%;
   background:
-    linear-gradient(90deg, rgba(0,229,255,0.04) 1px, transparent 1px),
-    linear-gradient(0deg,   rgba(0,229,255,0.06) 1px, transparent 1px);
+    linear-gradient(90deg, rgba(0, 229, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(0, 229, 255, 0.06) 1px, transparent 1px);
   background-size: 60px 60px;
-  mask-image: linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 90%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.5) 0%, transparent 90%);
   transform: perspective(600px) rotateX(60deg);
   transform-origin: bottom center;
 }
 
-/* 扫描线 — 横向缓慢扫过 */
-.scan-line {
-  position: absolute; top: 0; left: 0; right: 0; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.25), transparent);
-  animation: scanDown 8s linear infinite;
-  opacity: 0.5;
-}
-@keyframes scanDown {
-  0%   { top: -2px; }
-  100% { top: 100%; }
-}
-
-/* 粒子光点 */
-.particles { position: absolute; inset: 0; }
-.dot {
+/* 水波纹粒子画布 */
+.ripple-canvas {
   position: absolute;
-  width: 2px; height: 2px;
-  border-radius: 50%;
-  background: rgba(0,229,255,0.6);
-  animation: dotPulse 3s ease-in-out infinite;
-}
-@keyframes dotPulse {
-  0%, 100% { opacity: 0.2; transform: scale(1); }
-  50%      { opacity: 0.9; transform: scale(1.8); }
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
 }
 
 /* 服务器立柱 */
 .server-pillar {
-  position: absolute; top: 0; bottom: 0; width: 48px;
-  display: flex; flex-direction: column; justify-content: center; gap: 18px;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
   padding: 40px 0;
 }
-.pillar-left  { left: 6%; }
-.pillar-right { right: 6%; }
-.led-row { display: flex; justify-content: center; }
-.led {
-  display: block; width: 4px; height: 4px; border-radius: 50%;
-  animation: ledBlink 2s ease-in-out infinite;
+.pillar-left {
+  left: 6%;
 }
-.led-cyan  { background: #00e5ff; box-shadow: 0 0 6px #00e5ff; animation-delay: 0s; }
-.led-blue  { background: #409eff; box-shadow: 0 0 6px #409eff; animation-delay: 0.8s; }
-.led-amber { background: #ffb74d; box-shadow: 0 0 6px #ffb74d; animation-delay: 0.4s; }
+.pillar-right {
+  right: 6%;
+}
+.led-row {
+  display: flex;
+  justify-content: center;
+}
+.led {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  animation: ledBlink 2s ease-in-out infinite; /* 服务器立柱 LED 闪烁 */
+}
+.led-cyan {
+  background: #00e5ff;
+  box-shadow: 0 0 6px #00e5ff;
+  animation-delay: 0s;
+}
+.led-blue {
+  background: #409eff;
+  box-shadow: 0 0 6px #409eff;
+  animation-delay: 0.8s;
+}
+.led-amber {
+  background: #ffb74d;
+  box-shadow: 0 0 6px #ffb74d;
+  animation-delay: 0.4s;
+}
 @keyframes ledBlink {
-  0%, 100% { opacity: 1; }
-  30%      { opacity: 0.2; }
-  60%      { opacity: 0.8; }
+  /* 服务器 LED 呼吸：亮→暗→半亮→亮 */
+  0%,
+  100% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 0.2;
+  }
+  60% {
+    opacity: 0.8;
+  }
 }
 
 /* --- 登录卡片 --- */
 .login-card {
-  position: relative; z-index: 10;
+  position: relative;
+  z-index: 10;
   width: 420px;
   background: rgba(8, 16, 30, 0.85);
   backdrop-filter: blur(24px);
@@ -230,55 +432,107 @@ const handleLogin = async () => {
 
 /* 顶部状态条 */
 .status-bar {
-  display: flex; align-items: center; gap: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px 20px;
   background: rgba(0, 0, 0, 0.3);
   border-bottom: 1px solid rgba(0, 229, 255, 0.08);
-  font-size: 10px; color: rgba(255,255,255,0.4);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
 }
-.status-dot { width: 6px; height: 6px; border-radius: 50%; }
-.status-green  { background: #00e676; box-shadow: 0 0 6px #00e676; }
-.status-amber  { background: #ffb74d; box-shadow: 0 0 6px #ffb74d; }
-.status-spacer { flex: 1; }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.status-green {
+  background: #00e676;
+  box-shadow: 0 0 6px #00e676;
+}
+.status-amber {
+  background: #ffb74d;
+  box-shadow: 0 0 6px #ffb74d;
+}
+.status-spacer {
+  flex: 1;
+}
 
 /* 品牌区 */
-.brand-block { text-align: center; padding: 36px 40px 28px; }
+.brand-block {
+  text-align: center;
+  padding: 36px 40px 28px;
+}
 .logo-hex {
-  width: 56px; height: 56px; margin: 0 auto 16px;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 16px;
   background: linear-gradient(135deg, #0a1628, #102040);
   border: 1.5px solid rgba(0, 229, 255, 0.3);
   clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-  display: flex; align-items: center; justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   box-shadow: 0 0 30px rgba(0, 229, 255, 0.1);
 }
 .hex-char {
-  font-size: 22px; color: #00e5ff; font-weight: 700;
+  font-size: 22px;
+  color: #00e5ff;
+  font-weight: 700;
   text-shadow: 0 0 12px rgba(0, 229, 255, 0.5);
 }
 .title-cn {
-  margin: 0; font-size: 26px; font-weight: 700;
-  color: #e8f4f8; letter-spacing: 8px;
-  font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  color: #e8f4f8;
+  letter-spacing: 8px;
+  font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 .title-en {
-  margin: 6px 0 0; font-size: 11px; letter-spacing: 6px;
-  color: rgba(0, 229, 255, 0.5); font-weight: 400;
+  margin: 6px 0 0;
+  font-size: 11px;
+  letter-spacing: 6px;
+  color: rgba(0, 229, 255, 0.5);
+  font-weight: 400;
 }
 .divider-line {
-  display: flex; align-items: center; justify-content: center; margin: 18px 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 18px 0 10px;
 }
 .divider-line span {
-  display: block; width: 40px; height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(0,229,255,0.3), transparent);
+  display: block;
+  width: 40px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 229, 255, 0.3),
+    transparent
+  );
 }
-.tagline { margin: 0; font-size: 12px; color: rgba(255,255,255,0.3); letter-spacing: 4px; }
+.tagline {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.3);
+  letter-spacing: 4px;
+}
 
 /* 表单 */
-.login-form { padding: 0 40px 32px; }
-.input-group { margin-bottom: 18px; }
+.login-form {
+  padding: 0 40px 32px;
+}
+.input-group {
+  margin-bottom: 18px;
+}
 .input-label {
-  display: block; font-size: 10px; color: rgba(0,229,255,0.45);
-  letter-spacing: 2px; margin-bottom: 6px;
+  display: block;
+  font-size: 10px;
+  color: rgba(0, 229, 255, 0.45);
+  letter-spacing: 2px;
+  margin-bottom: 6px;
   padding-left: 2px;
 }
 
@@ -289,7 +543,9 @@ const handleLogin = async () => {
   border: 1px solid rgba(0, 229, 255, 0.12) !important;
   border-radius: 2px;
   height: 44px;
-  transition: border-color 0.3s, box-shadow 0.3s;
+  transition:
+    border-color 0.3s,
+    box-shadow 0.3s;
 }
 .custom-input :deep(.el-input__wrapper:hover) {
   border-color: rgba(0, 229, 255, 0.3) !important;
@@ -300,66 +556,99 @@ const handleLogin = async () => {
 }
 .custom-input :deep(.el-input__inner) {
   color: #c8dce8 !important;
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace !important;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace !important;
   font-size: 13px;
   letter-spacing: 1px;
 }
 .custom-input :deep(.el-input__inner::placeholder) {
-  color: rgba(255,255,255,0.12) !important;
+  color: rgba(255, 255, 255, 0.12) !important;
 }
 .custom-input :deep(.el-input__prefix) {
   color: rgba(0, 229, 255, 0.3);
 }
 .custom-input :deep(.el-input__suffix) {
-  color: rgba(255,255,255,0.2);
+  color: rgba(255, 255, 255, 0.2);
 }
 
 /* 登录按钮 */
 .login-btn {
-  width: 100%; height: 44px; margin-top: 6px;
+  width: 100%;
+  height: 44px;
+  margin-top: 6px;
   background: transparent !important;
   border: 1px solid rgba(0, 229, 255, 0.25) !important;
   border-radius: 2px !important;
   color: #00e5ff !important;
   font-size: 13px !important;
   letter-spacing: 3px !important;
-  font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace !important;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace !important;
   transition: all 0.35s !important;
-  position: relative; overflow: hidden;
+  position: relative;
+  overflow: hidden;
 }
 .login-btn::before {
-  content: '';
-  position: absolute; inset: 0;
-  background: linear-gradient(90deg, rgba(0,229,255,0), rgba(0,229,255,0.06), rgba(0,229,255,0));
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(0, 229, 255, 0),
+    rgba(0, 229, 255, 0.06),
+    rgba(0, 229, 255, 0)
+  );
   transform: translateX(-100%);
   transition: transform 0.5s;
 }
-.login-btn:hover::before { transform: translateX(100%); }
+.login-btn:hover::before {
+  transform: translateX(100%);
+}
 .login-btn:hover {
   border-color: rgba(0, 229, 255, 0.6) !important;
-  box-shadow: 0 0 24px rgba(0, 229, 255, 0.15), inset 0 0 24px rgba(0, 229, 255, 0.04) !important;
+  box-shadow:
+    0 0 24px rgba(0, 229, 255, 0.15),
+    inset 0 0 24px rgba(0, 229, 255, 0.04) !important;
 }
-.login-btn:active { transform: scale(0.98); }
+.login-btn:active {
+  transform: scale(0.98);
+}
 .btn-content {
-  display: flex; align-items: center; justify-content: center; gap: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 .btn-arrow {
-  font-size: 14px; transition: transform 0.3s;
+  font-size: 14px;
+  transition: transform 0.3s;
 }
-.login-btn:hover .btn-arrow { transform: translateX(3px); }
+.login-btn:hover .btn-arrow {
+  transform: translateX(3px);
+}
 
 /* 底部 */
 .card-footer {
   padding: 14px 40px;
   border-top: 1px solid rgba(0, 229, 255, 0.06);
-  text-align: center; font-size: 11px; color: rgba(255,255,255,0.2);
-  display: flex; align-items: center; justify-content: center; gap: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
-.footer-icon { color: rgba(0,229,255,0.3); }
+.footer-icon {
+  color: rgba(0, 229, 255, 0.3);
+}
 
 /* 右下角版本号 */
 .version-tag {
-  position: absolute; bottom: 24px; right: 28px; z-index: 10;
-  font-size: 10px; color: rgba(255,255,255,0.15); letter-spacing: 2px;
+  position: absolute;
+  bottom: 24px;
+  right: 28px;
+  z-index: 10;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.15);
+  letter-spacing: 2px;
 }
 </style>
