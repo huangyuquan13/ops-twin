@@ -242,6 +242,15 @@ const connectMiniWs = (recordId: string) => {
       const el = miniTerminalRef.value;
       if (el) el.scrollTop = el.scrollHeight;
     });
+    // 实时持久化日志：无论用户怎么切页（侧边栏/展开全屏），回来都能恢复已收日志
+    const saved = sessionStorage.getItem("dashboardState");
+    if (saved) {
+      try {
+        const st = JSON.parse(saved);
+        if (st.miniTerm) st.miniTerm.logs = [...miniLogs.value];
+        sessionStorage.setItem("dashboardState", JSON.stringify(st));
+      } catch (_) {}
+    }
     // 检测到执行完成，自动切换浮动标签
     const msg: string = event.data;
     if (msg.includes("[SUCCESS]")) {
@@ -987,16 +996,6 @@ const goBack = () => {
 
     if (activeCabinet) {
       activeCabinet = null;
-    }
-
-    // 通知 sessionStorage：执行视图已退出，下次回来不再自动弹小终端
-    const saved = sessionStorage.getItem("dashboardState");
-    if (saved) {
-      try {
-        const state = JSON.parse(saved);
-        state.active = false;
-        sessionStorage.setItem("dashboardState", JSON.stringify(state));
-      } catch (_) {}
     }
   }
 };

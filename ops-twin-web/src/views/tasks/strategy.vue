@@ -106,7 +106,7 @@
                 <el-button v-if="userStore.hasPerm('strategy:edit')" link type="primary" :icon="Edit" @click="handleEdit(row)">编辑</el-button>
               </div>
               <div class="action-row">
-                <el-button v-if="userStore.hasPerm('strategy:execute') && row.status === 1" link type="success" :loading="runLoading[row.id]" @click="handleRun(row)">执行</el-button>
+                <el-button v-if="userStore.hasPerm('strategy:execute') && row.status === 1" link type="success" :loading="runLoading[row.id]" :disabled="isPlanRunning(row)" @click="handleRun(row)">执行</el-button>
                 <el-button v-if="userStore.hasPerm('strategy:execute') && row.status === 0" link type="warning" :loading="resetLoading[row.id]" @click="handlePlanReset(row)">重置</el-button>
                 <el-button v-if="userStore.hasPerm('strategy:delete')" link type="danger" :icon="Delete" @click="handleDelete(row)">删除</el-button>
               </div>
@@ -355,6 +355,30 @@ const toggleStatus = async (row: any) => {
 };
 
 // ============ 执行预案 ============
+
+// 检查是否有任务正在运行（通过 sessionStorage 日志判断：有日志且未结束 = 有任务在跑）
+const hasRunningTask = (): boolean => {
+  const saved = sessionStorage.getItem('dashboardState');
+  if (!saved) return false;
+  try {
+    const s = JSON.parse(saved);
+    const logs: string[] = s.miniTerm?.logs || [];
+    if (logs.length === 0) return false;
+    const all = logs.join(' ');
+    return !all.includes('[SUCCESS]') && !all.includes('[ERROR]') && !all.includes('用户已终止');
+  } catch { return false; }
+};
+
+const isPlanRunning = (row: any): boolean => {
+  if (!hasRunningTask()) return false;
+  const saved = sessionStorage.getItem('dashboardState');
+  if (!saved) return false;
+  try {
+    const s = JSON.parse(saved);
+    return s.miniTerm?.planName === row.planName;
+  } catch { return false; }
+};
+
 const handleRun = (row: any) => {
   // 安全门：检查是否有残留的终端记录
   const saved = sessionStorage.getItem('dashboardState');
