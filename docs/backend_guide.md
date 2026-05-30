@@ -4,392 +4,298 @@
 
 ---
 
+## 简历四句话 → 后端文件对照表
+
+| # | 简历描述 | 对应的后端文件 | 优先级 |
+|---|---------|--------------|--------|
+| 1 | Three.js 3D + WebSocket 状态推送 | `DashboardWebSocketHandler.java` | ★★★ |
+| 2 | 路由 + 权限双层控制 | `JwtAuthFilter.java`, `SysController.java`, `RoleController.java`, `SysPermissionController.java` | ★★ |
+| 3 | Vue Flow 编排 + 终端日志 | `TaskExecutionEngine.java`, `TaskLogWebSocketHandler.java`, `TaskPlanController.java` | ★★★ |
+| 4 | Docker + Nginx 部署 | `docker-compose.yml`, 两个 `Dockerfile` | ★ |
+
+---
+
 ## 目录
 
-1. [整体架构速览](#1-整体架构速览)
-2. [你需要重点理解的 4 个文件](#2-你需要重点理解的-4-个文件)
-3. [演练执行全流程（核心）](#3-演练执行全流程核心)
-4. [双通道 WebSocket 实时联动](#4-双通道-websocket-实时联动)
-5. [其他 Controller 一览](#5-其他-controller-一览)
-6. [Spring Boot 基础概念速查](#6-spring-boot-基础概念速查)
-7. [简历面试要点](#7-简历面试要点)
+1. [简历点 1：3D WebSocket 实时状态推送](#1-简历点-13d-websocket-实时状态推送)
+2. [简历点 2：路由权限双层控制](#2-简历点-2路由权限双层控制)
+3. [简历点 3：演练编排 + 终端日志](#3-简历点-3演练编排--终端日志)
+4. [简历点 4：Docker 部署](#4-简历点-4docker-部署)
+5. [Spring Boot 基础概念速查](#5-spring-boot-基础概念速查)
+6. [面试高频追问清单](#6-面试高频追问清单)
 
 ---
 
-## 1. 整体架构速览
+## 0. 前置知识：你的路由其实不是"动态路由"
 
-```
-src/main/java/com/ops/twin/
-├── OpsTwinApplication.java         ← Spring Boot 入口
-├── common/Result.java              ← 统一响应格式 {code, message, data}
-├── config/                         ← 配置类
-├── controller/                     ← HTTP 接口层（12 个 Controller）
-├── entity/                         ← 数据库表对应的 Java 类（13 张表）
-├── mapper/                         ← MyBatis-Plus 数据访问层（零 SQL XML）
-├── service/                        ← 业务逻辑层
-│   ├── TaskExecutionEngine.java    ← ★ 核心：异步执行引擎
-│   └── impl/                       ← Service 实现类
-├── security/                       ← JWT 认证 + Spring Security
-├── audit/                          ← AOP 操作审计（注解 + 切面）
-└── websocket/                      ← ★ WebSocket 双通道
-    ├── TaskLogWebSocketHandler.java    ← 终端日志推送
-    └── DashboardWebSocketHandler.java  ← 3D 事件推送
-```
+简历上写的"动态路由方案"在面试时可能会被追问。事实是：
 
-**分层关系：**
+**本项目是静态路由 + 动态权限**，不是动态路由。
+- 路由表写死在 `router/index.ts`，13 条固定不变
+- 权限数据（menus + permissions）从后端动态拉取，控制的是侧边栏显隐和按钮权限
+- 路由守卫按 `userMenus` 路径白名单做 403 拦截
 
-```
-Controller（接收 HTTP 请求）
-  → Service（业务逻辑）
-    → Mapper（数据库操作）
-    → WebSocket Handler（实时推送）
-```
+**建议说法**（面试时）："基于 RBAC 的静态路由 + 动态菜单权限方案，菜单结构由后端下发、前端运行时按权限过滤渲染，路由守卫配合 localStorage 做菜单级 403 拦截。"
+
+这会让你听起来很专业，因为你能区分"动态路由"和"动态权限"。
 
 ---
 
-## 2. 你需要重点理解的 4 个文件
+## 1. 简历点 1：3D WebSocket 实时状态推送
 
-按重要性排序：
+**简历原文**："通过 WebSocket 实时推送设备状态并动态更新模型颜色与 LED 指示灯"
 
-| 优先级 | 文件 | 对应的前端 | 花的时间 |
-|--------|------|-----------|---------|
-| ★★★ | `service/TaskExecutionEngine.java` | 终端实时日志 + 3D 状态变化 | 2 天 |
-| ★★★ | `websocket/TaskLogWebSocketHandler.java` | `terminal.vue` 的日志流 | 半天 |
-| ★★ | `service/impl/TaskRecordServiceImpl.java` | 点击"执行"按钮后的触发逻辑 | 半天 |
-| ★★ | `websocket/DashboardWebSocketHandler.java` | `dashboard/index.vue` 的 3D 联动 | 半天 |
-
-其他 Controller、Entity、Mapper 基本是标准 CRUD，你看一眼就能对应到前端的表格页面。
-
----
-
-## 3. 演练执行全流程（核心）
-
-这是整个项目最有技术含量的部分。对照下面的时序理解：
-
-### 3.1 触发阶段（从前端点击到异步执行）
+### 后端干了什么
 
 ```
-前端: 点击"执行"按钮 (strategy.vue)
-  │
-  ▼
-POST /api/task/record/trigger/{planId}
-  │
-  ▼
-TaskRecordController.trigger()
-  ├── ① 查出 TaskPlan（预案定义）
-  ├── ② 校验 plan.status === 1（已启用）
-  ├── ③ 检查该 plan 没有正在运行的任务
-  ├── ④ 调用 TaskRecordServiceImpl.triggerAsync()
-  │     ├── 创建 TaskRecord（runStatus = PENDING）
-  │     └── 调用 executionEngine.execute(recordId, plan)  ← @Async 异步！
-  └── ⑤ 立即返回 { recordId, wsPath: "/ws/task/log/123" }
-       ↑ HTTP 响应到此结束，用户不会等待
-
-前端: 收到 recordId → 跳转 dashboard + 连接 WebSocket
+TaskExecutionEngine 执行一个步骤
+  → 改了 host.status（1→2→3）
+    → DashboardWebSocketHandler.broadcast(json)
+      → 所有在线的 3D 看板收到 JSON
 ```
 
-**关键设计点：** `@Async` 注解让 `execute()` 方法在另一个线程执行，HTTP 请求立即返回。这意味着执行一个 10 步的预案只需要毫秒级的接口响应时间。
+### 只需要看 2 个文件
 
-### 3.2 执行阶段（TaskExecutionEngine.execute()）
+| 文件 | 看什么 | 10 分钟够 |
+|------|--------|----------|
+| `websocket/DashboardWebSocketHandler.java` | 全局广播：`CopyOnWriteArrayList<Session>` 存所有 3D 客户端，`broadcast()` 遍历发消息 | 5 分钟 |
+| `TaskExecutionEngine.java:159-161` | 调 `broadcast()` 的那一行，看推送的 JSON 格式 | 2 分钟 |
 
-这是核心中的核心，逐行理解：
+### 推送 JSON 格式
 
+```json
+{"type":"HOST_STATUS","hostname":"web-01","status":3,"cabinetId":1}
+```
+
+前端 `dashboard/index.vue` 收到后：查 hostname 对应的 3D mesh → 改 material.color（1=绿/2=黄/3=红）→ 触发 LED 脉冲动画。
+
+## 2. 简历点 2：路由权限双层控制
+
+**简历原文**："基于 Vue Router 与 Pinia 实现多角色路由方案，菜单结构由后端下发；结合路由守卫，覆盖菜单级至按钮级双层权限控制"
+
+### 后端干了什么：4 个文件一条链
+
+```
+用户登录 → JwtAuthFilter 放行 /api/auth/login
+    ↓
+AuthController.login() → 生成 JWT token（含 roleId）→ 返回前端
+    ↓
+前端用 token 调 GET /api/system/menus?roleId=1
+    ↓
+SysController.getMenus(roleId)
+    ├─ 查 sys_role_permission 表 → 该角色有权的 permIds
+    ├─ 查 sys_permission 表 → 完整的菜单+按钮数据
+    ├─ type=1 → menus 数组（侧边栏渲染）
+
+
+    └─ type=2 → permissions 数组（按钮 hasPerm）
+```
+
+### 只需要看 3 个文件
+
+| 文件 | 关键方法 | 看什么 |
+|------|---------|--------|
+| `security/JwtAuthFilter.java` | `doFilterInternal()` | 哪三类请求不用 token（白名单），其他全拦截 → 401 |
+| `controller/SysController.java` | `getMenus()` | 查 role 的权限 ID → 查出完整菜单树 → 洗干净返回 |
+| `controller/RoleController.java` | `savePermissions()` | 角色-权限的增删：先删旧映射，再批量插新映射 |
+
+### 整个链路的后端关键代码
+
+**生成 token 时已经埋了 roleId：（你登录页面完全没感知这件事）**
 ```java
-@Async  // ← Spring 会在线程池中执行这个方法
-public void execute(Long recordId, TaskPlan plan) {
+// AuthController.java:62
+String token = jwtUtils.generateToken(user.getUsername(), user.getId(), user.getRoleId());
 ```
 
-**步骤 1：解析步骤 JSON**
-
+**JWT Filter 放行登录接口 + WebSocket：（没有 token 校验就返回 401）**
 ```java
-// plan.getStepsJson() 就是你在 workflow.vue 编排画布里拖出来的节点 JSON
-// 格式：[{id:"node1", type:"STOP_NODE", data:{target:"web-01", waitMs:2000}}, ...]
-List<StepNode> steps = parseSteps(plan.getStepsJson());
-```
-
-**步骤 2：跳过布局节点**
-
-```java
-// workflow.vue 的画布上有些节点只是用来做视觉连接的（layout-meta）
-// 后端执行时要跳过它们，只执行真正的操作步骤
-steps = steps.stream()
-    .filter(s -> !"layout-meta".equals(s.getType()))
-    .collect(toList());
-```
-
-**步骤 3：逐个执行步骤（runStep）**
-
-```java
-for (StepNode step : realSteps) {
-    // 检查是否被取消了
-    if (cancelFlags.get(recordId)) { ... break; }
-
-    runStep(recordId, plan.getServiceId(), step);
-    Thread.sleep(step.getWaitMs());  // 等待步骤间的时间间隔
+// JwtAuthFilter.java:33-36
+if (path.equals("/api/auth/login") || path.startsWith("/ws/") || path.startsWith("/uploads/")) {
+    filterChain.doFilter(request, response);  // 直接放行
+    return;
 }
 ```
 
-**步骤 4：runStep 内部做了什么**
+**菜单接口根据 roleId 筛选权限的 SQL 逻辑：**
+```java
+// SysController.getMenus(roleId)
+// Step 1：查角色-权限关联表 → 拿到权限 ID 列表
+List<Long> permIds = sysRolePermissionMapper.selectList(
+    query.eq(SysRolePermission::getRoleId, roleId)
+).stream().map(SysRolePermission::getPermissionId).collect(Collectors.toList());
+
+// Step 2：根据 ID 查出完整权限信息
+List<SysPermission> all = sysPermissionMapper.selectBatchIds(permIds);
+
+// Step 3：type=1 是菜单，type=2 是按钮
+menus = all.filter(p -> p.getType() == 1);      // 侧边栏用
+permissions = all.filter(p -> p.getType() == 2)  // 按钮权限用
+              .map(SysPermission::getPermissionCode);
+```
+
+### 权限管理页用得上的后端接口（RoleManage）
+
+| 前端操作 | 后端接口 | Controller |
+|---------|---------|------------|
+| 加载角色列表 | `GET /api/system/role/list` | `RoleController.list()` |
+| 选择角色 → 回显已有权限 | `GET /api/system/role/{id}/permissions` | `RoleController.getPermissions()` |
+| 勾选权限 → 保存 | `POST /api/system/role/{id}/permissions` | `RoleController.savePermissions()` |
+| 新增/编辑权限节点 | `POST /api/system/permission/save` | `SysPermissionController.save()` |
+| 删除权限节点 | `DELETE /api/system/permission/delete/{id}` | `SysPermissionController.delete()` |
+
+---
+
+## 3. 简历点 3：演练编排 + 终端日志
+
+**简历原文**："引入 Vue Flow 实现容灾演练流程的可视化编排，支持拖拽式节点连接与策略配置；自研 WebSocket 驱动的仿终端日志组件，实时流式渲染脚本执行输出"
+
+### 从"点击执行"到"终端看到日志"的完整链路
+
+```
+前端 strategy.vue → 点击"执行"按钮
+  ↓
+POST /api/task/record/trigger/{planId}
+  ↓
+TaskRecordController.trigger(planId)
+  ├─ 查 TaskPlan（拿到 steps_json）
+  ├─ 校验：plan 已启用 + 没有正在跑的同计划任务
+  └─ 调 TaskRecordServiceImpl.triggerAsync()
+       ├─ 建 TaskRecord（runStatus=PENDING）
+       └─ 调 executionEngine.execute(recordId, plan)  ← @Async 异步！
+  ↓ HTTP 接口立即返回 { recordId, wsPath }
+  ↓
+前端收到 → router.push → dashboard → WebSocket 连接 /ws/task/log/{recordId}
+  ↓
+TaskExecutionEngine（另开线程）解析 steps_json → 逐个 runStep
+  └─ 每步：改 DB → pushLog → broadcast 3D 事件
+```
+
+### 只需要看 3 个文件
+
+| 文件 | 看什么 | 花的时间 |
+|------|--------|---------|
+| `service/TaskExecutionEngine.java` | `execute()` 异步入口 + `runStep()` 改状态+推日志 (**理解核心**) | 30 分钟 |
+| `websocket/TaskLogWebSocketHandler.java` | 按 recordId 分组存 session，`broadcast(recordId, msg)` 推日志文本 | 10 分钟 |
+| `controller/TaskRecordController.java` | `trigger()` 触发 + `terminate()` 终止 | 10 分钟 |
+
+### runStep 到底干了什么（简版）
 
 ```java
 void runStep(Long recordId, Long serviceId, StepNode step) {
-    // ① 根据 hostname 查到对应主机
-    AssetHost host = hostMapper.findByHostname(step.getTarget());
-
-    // ② 根据动作类型，决定新的状态值
-    // STOP_NODE → status=3 (down)
-    // START_NODE → status=1 (healthy)
-    // HEALTH_CHECK → 随机 1 或 3
-    Integer newStatus = mapActionToStatus(step.getType());
-
-    // ③ 更新数据库中的主机状态
-    host.setStatus(newStatus);
-    hostMapper.updateById(host);
-
-    // ④ 特殊操作：修改服务-主机映射关系
-    // PROMOTE_SLAVE → 从库提升为主库（改 service_host_map）
-    // FAILOVER_TO  → 故障转移（切换绑定）
-    // REMOVE_NODE  → 下线节点（删除绑定）
-    modifyServiceHostMap(serviceId, step);
-
-    // ⑤ ★ 推送日志到终端 WebSocket
-    pushLog(recordId, "[" + step.getType() + "] " + host.getHostname()
-            + " → 状态变为 " + newStatus);
-
-    // ⑥ ★ 推送事件到 3D 看板 WebSocket
-    DashboardWebSocketHandler.broadcast(json);
-    // 发送的 JSON 格式：
-    // {type:"HOST_STATUS", hostname:"web-01", status:3, cabinetId:1}
+    // ① 查主机：hostname → AssetHost
+    // ② 算新状态：STOP_NODE→3(down), START_NODE→1(healthy)
+    // ③ 改 DB：host.setStatus(newStatus) → hostMapper.updateById(host)
+    // ④ 改映射：FAILOVER/SCALE 改 service_host_map 绑定关系
+    // ⑤ 推终端：pushLog(recordId, "[STEP] web-01 → down")
+    // ⑥ 推 3D：  DashboardWebSocketHandler.broadcast(host_status_json)
 }
 ```
 
-**步骤 5：执行完毕**
+### WebSocket 双通道对比
 
-```java
-// 执行完毕后自动禁用预案（防止重复执行）
-plan.setStatus(0);
-planMapper.updateById(plan);
-
-// 更新执行记录的最终状态
-record.setRunStatus("SUCCESS");
-record.setDurationMs(System.currentTimeMillis() - start);
-recordMapper.updateById(record);
-```
-
-### 3.3 终止阶段
-
-```
-前端: 点击"终止"按钮 (terminal.vue)
-  │
-  ▼
-POST /api/task/record/{id}/terminate
-  │
-  ▼
-executionEngine.cancel(recordId)
-  └── cancelFlags.put(recordId, true)  // 设置取消标记
-      └── execute() 循环中检测到标记 → break 退出
-```
-
-### 3.4 预案重置（plan reset）
-
-演练执行完后主机状态被改了，需要恢复。`TaskPlanController.reset(planId)`：
-
-- **DRILL 类型**：把所有受影响的主机状态恢复为 1 (healthy)
-- **FAILOVER/SCALE 类型**：从 topology JSON 重建 service_host_map 绑定关系
-- 最后把 plan 的 status 设回 1（重新启用）
+| | 日志通道 | 3D 事件通道 |
+|---|---|---|
+| URL | `/ws/task/log/{recordId}` | `/ws/dashboard/events` |
+| Java 文件 | `TaskLogWebSocketHandler.java` | `DashboardWebSocketHandler.java` |
+| 存储结构 | `Map<recordId, List<Session>>` — 按任务隔离 | `List<Session>` — 所有看板共享 |
+| 推送方式 | 只推给连接了该任务的终端 | 广播给所有 3D 客户端 |
+| 前端 | `terminal.vue` (Xterm 渲染) | `dashboard/index.vue` (改颜色+LED) |
 
 ---
 
-## 4. 双通道 WebSocket 实时联动
+## 4. 简历点 4：Docker 部署
 
-这是你简历上最亮眼的技术点。两个 WebSocket 通道各司其职：
+**简历原文**："通过 Docker 一键部署全套服务，配合 Nginx 反向代理实现前后端分离"
 
-### 4.1 架构图
+### 文件结构
 
 ```
-浏览器
-├── WebSocket 1: /ws/task/log/{recordId}
-│      ↓ 单向推送（后端→前端）
-│   TaskLogWebSocketHandler
-│      ↓ 每执行一个步骤推送一行
-│   terminal.vue（Xterm 终端显示）
-│
-└── WebSocket 2: /ws/dashboard/events
-       ↓ 单向推送（后端→前端）
-    DashboardWebSocketHandler
-       ↓ 主机状态变化时推送 JSON
-    dashboard/index.vue（3D 机柜变色 + LED 动画）
+根目录/
+├── docker-compose.yml              ← 一键编排：MySQL + Spring Boot + Nginx
+├── ops-twin-server/Dockerfile      ← 后端镜像
+└── ops-twin-web/Dockerfile         ← 前端镜像
 ```
 
-### 4.2 TaskLogWebSocketHandler（日志通道）
+### docker-compose 干的事
 
-```java
-// 核心数据结构：一个任务可以有多个订阅者
-ConcurrentHashMap<Long, CopyOnWriteArrayList<WebSocketSession>> sessions;
-
-// 建立连接时（前端 new WebSocket(url)）
-void afterConnectionEstablished(session) {
-    Long recordId = 从 URI 路径 /ws/task/log/{recordId} 中提取;
-    sessions.get(recordId).add(session);
-}
-
-// 推送日志（由 TaskExecutionEngine.runStep 调用）
-void broadcast(Long recordId, String message) {
-    for (WebSocketSession s : sessions.get(recordId)) {
-        s.sendMessage(new TextMessage("[14:30:22] STOP_NODE web-01 → down"));
-    }
-}
+```yaml
+services:
+  mysql:      # MySQL 8.0 数据库，端口 3306
+  server:     # Spring Boot 后端，端口 8080，依赖 mysql
+  nginx:      # Nginx 反代，端口 80，依赖 server
 ```
 
-**前端对应代码**（`terminal.vue`）：
-```javascript
-const ws = new WebSocket(`ws://localhost:8080/ws/task/log/${recordId}`)
-ws.onmessage = (event) => {
-  // event.data = "[14:30:22] STOP_NODE web-01 → down"
-  terminal.write(event.data + '\n')
-  // 同时存入 sessionStorage（跨页面恢复用）
-}
+**Nginx 反代的作用**：
+
+```
+用户访问 http://服务器IP
+  → Nginx（80 端口）
+    ├─ /api/*  → 转发给 server:8080（后端处理）
+    ├─ /ws/*   → 转发给 server:8080（WebSocket 直连）
+    └─ /*      → 返回前端静态文件（nginx 内置）
 ```
 
-### 4.3 DashboardWebSocketHandler（3D 事件通道）
+这样就实现了"同一个 IP 访问前后端"，浏览器不用配置跨端口访问。
 
-```java
-// 只维护一个全局会话列表（所有 3D 客户端共享）
-CopyOnWriteArrayList<WebSocketSession> sessions;
+### 面试时说
 
-// 广播给所有连接的 3D 看板
-static void broadcast(String json) {
-    for (WebSocketSession s : sessions) {
-        s.sendMessage(new TextMessage(json));
-    }
-}
-```
-
-**推送的 JSON 格式：**
-```json
-{
-  "type": "HOST_STATUS",
-  "hostname": "web-01",
-  "status": 3,
-  "cabinetId": 1,
-  "timestamp": 1715856000000
-}
-```
-
-**前端对应代码**（`dashboard/index.vue`）：
-```javascript
-const ws = new WebSocket('ws://localhost:8080/ws/dashboard/events')
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data)
-  if (data.type === 'HOST_STATUS') {
-    // ① 更新 3D 机柜中对应主机的颜色
-    //    status 1 → 绿色，2 → 黄色，3 → 红色
-    // ② 触发 LED 脉冲动画（绿→黄→红的过渡）
-    // ③ 如果有对应标签，更新 CSS2D 标签颜色
-  }
-}
-```
-
-### 4.4 为什么用两个通道而不是一个？
-
-- **隔离性**：日志通道是"一对一"的（每个任务独立），3D 通道是"广播"的（所有看板共享）
-- **生命周期不同**：日志通道在任务结束后关闭，3D 通道随页面常驻
-- **职责清晰**：终端只关心日志文本，看板只关心状态事件，互不干扰
+> "用 Docker Compose 把 MySQL、Spring Boot、Nginx 三个容器编排在一个桥接网络里。Nginx 反向代理解决同域访问，前端 `/api` 请求转发给 Java 后端，`/ws` WebSocket 也是 Nginx 转发。一条 `docker-compose up -d` 就起全套服务。"
 
 ---
 
-## 5. 其他 Controller 一览
+## 5. Spring Boot 基础概念速查
 
-这些基本都是标准 CRUD，你对照前端页面就能理解：
-
-| Controller | 对应前端页面 | 特别说明 |
-|-----------|-------------|---------|
-| `AuthController` | `login/index.vue` | JWT 签发，bcrypt 密码验证 |
-| `UserController` | `system/user.vue` | 含头像上传（MultipartFile） |
-| `RoleController` | `system/role.vue` | 角色 CRUD + 权限树分配 |
-| `AuditController` | `system/audit.vue` | 操作审计日志查询 |
-| `AssetCabinetController` | `assets/cabinet.vue` | 机柜 CRUD，删除前检查有无主机 |
-| `AssetController` | `assets/host.vue` | 主机 CRUD，含机柜槽位校验 |
-| `AssetServiceController` | `assets/service.vue` | 逻辑服务 + Vue Flow 拓扑保存 |
-| `TaskPlanController` | `tasks/strategy.vue` | 预案 CRUD + 启用/禁用 + 重置 |
-| `TaskRecordController` | 执行触发 | 触发执行、查询记录、终止任务 |
-| `AnalysisController` | `dashboard/analysis.vue` | KPI 统计（部分 mock 数据） |
-| `SysController` | 登录后初始化 | 返回角色菜单树 + 权限码列表 |
-
-### 特别注意：`AssetServiceController` 的拓扑保存
-
-```java
-POST /api/asset/service/topology/save
-// 前端 Vue Flow 画布保存时：
-// ① 保存 topologyJson（节点坐标、连线关系）
-// ② 解析 JSON 中的 hostId，重建 service_host_map 绑定
-// 这样就实现了"拖拽主机到服务 = 建立映射关系"
-```
-
----
-
-## 6. Spring Boot 基础概念速查
-
-你不写 Java 代码，但看代码时需要知道这些：
-
-| 概念 | 一句话解释 | 类比前端 |
-|------|-----------|---------|
-| `@RestController` | HTTP 接口控制器 | Vue Router 的一个 route handler |
-| `@RequestMapping("/api/xxx")` | 接口路径前缀 | `router.get('/api/xxx')` |
+| 注解/概念 | 一句话解释 | 类比前端 |
+|-----------|-----------|---------|
+| `@RestController` | HTTP 接口控制器 | Vue Router route handler |
 | `@GetMapping/@PostMapping` | GET/POST 请求 | `axios.get()` / `axios.post()` |
-| `@Async` | 方法在独立线程执行 | `Promise` 或 `setTimeout` |
-| `@Autowired` / `@Resource` | 自动注入依赖 | `import` 一个模块 |
-| `@Component` | 声明一个 Spring 管理的 Bean | 不需要类比，知道它会被自动创建就行 |
-| `@Transactional` | 数据库事务 | 一组操作要么全成功要么全回滚 |
-| `IService<T>` | MyBatis-Plus 提供的 CRUD 接口 | 一个自带增删改查的 API |
-| `BaseMapper<T>` | 直接操作数据库的层 | Prisma Client / Drizzle |
+| `@Async` | 方法在独立线程执行 | `Promise` / `setTimeout` |
+| `@Autowired` | 自动注入依赖 | `import` 一个模块 |
 | `Result<T>` | 统一响应格式 | `{ code: 200, message: "ok", data: {...} }` |
-
-**执行引擎为什么不是 Service 而是独立 Component？**
-
-`TaskExecutionEngine` 直接依赖 Mapper（不通过 Service），是为了避免循环依赖：Service 层要调用引擎，引擎如果又依赖 Service 就会形成循环。这是一种务实的取舍。
+| `BaseMapper<T>` | 直接操作数据库 | Prisma Client / Drizzle |
 
 ---
 
-## 7. 简历面试要点
+## 6. 面试高频追问清单
 
-### 7.1 面试官可能会问的问题
+### Q1: 演练执行时系统崩溃了怎么办？
+> `StaleTaskCleanup` 监听 `ApplicationReadyEvent`，系统启动时把所有 RUNNING/PENDING 任务置为 CANCELLED。执行循环中每步检查 `cancelFlags`，支持手动终止。不会留下永久脏数据。
 
-**Q: 这个项目的技术难点是什么？**
+### Q2: 预案的 steps_json 格式是谁设计的？
+> 前端 Vue Flow 拖拽编排 → 导出 JSON（type + target + waitMs）→ 存 `steps_json` 字段。后端 `parseSteps()` 反序列化，跳过 `layout-meta` 类型节点，执行真实的运维动作节点。
 
-> 答：核心技术难点是**演练执行引擎和 3D 数字孪生的实时联动**。我设计了一个双通道 WebSocket 架构：
-> - 通道一（`/ws/task/log/{id}`）：一对一推送每个执行步骤的日志到前端 Xterm 终端
-> - 通道二（`/ws/dashboard/events`）：广播主机状态变化事件到 3D 看板
->
-> 后端用 `@Async` 异步执行，HTTP 接口毫秒级返回，执行过程通过 WebSocket 实时推流。3D 看板收到事件后实时更新机柜颜色、触发 LED 动画、显示主机标签。
+### Q3: 3D 是怎么联动 WebSocket 的？
+> 后端 `runStep()` 改完主机状态后调 `DashboardWebSocketHandler.broadcast(json)` → 所有 3D 看板收到 JSON → 前端遍历 `meshList`，匹配 hostname → 改 material.color + 触发 LED 动画。
 
-**Q: 怎么保证执行过程中断或崩溃不会留下脏数据？**
+### Q4: 权限怎么实现双层控制？
+> 菜单级：`userMenus[]` → 侧边栏动态渲染 + 路由守卫 403 拦截。按钮级：`permissions[]` → `hasPerm(code)` → `v-if` 控制按钮显隐。后端 `SysController.getMenus(roleId)` 返回两份数据。
 
-> 答：应用启动时有一个 `StaleTaskCleanup` 监听器，会扫描数据库中所有 RUNNING/PENDING 状态的记录并自动标记为 CANCELLED。执行过程中每一步都检查取消标记，支持手动终止。
+### Q5: Nginx 反代有什么用？
+> 前端 5173、后端 8080、WebSocket 8080 → Nginx 把 `/api` 和 `/ws` 全反代到同一个 80 端口，浏览器只看到一个 IP，解决跨域 + 同域名访问。
 
-**Q: 预案的步骤 JSON 怎么设计的？**
+### Q6（附加题）: 你简历写"动态路由"，能展开说说吗？
+> 严格说本项目是"静态路由 + 动态菜单权限"。路由表固定注册 13 条，不同角色的菜单由后端按 roleId 过滤返回。和真正动态路由（如 Umi patchClientRoutes 运行时注入）的区别是路由表本身不变，变的是可见范围。两种方案我都做过，各有适用场景。
 
-> 答：前端 Vue Flow 画布拖拽编排节点，保存为 JSON 数组存到 `steps_json` 字段。每个节点包含 type（动作类型）、target（目标主机）、waitMs（等待时间）。后端解析 JSON 后跳过布局元数据节点，按顺序执行真实操作步骤，每步更新数据库状态并推送到 WebSocket。
+---
 
-### 7.2 简历上建议这样写
+## 你现在该先看哪个文件
 
-> **智维方舟 — 数据中心 3D 数字孪生运维平台**
->
-> - 基于 **Vue 3 + Three.js + Spring Boot** 全栈独立开发
-> - 设计并实现**双通道 WebSocket 实时联动架构**：演练执行引擎异步执行步骤，通过 `/ws/task/log` 推送实时日志到 Xterm 终端，通过 `/ws/dashboard/events` 驱动 3D 机柜实时变色与 LED 动画
-> - 实现 **Vue Flow 拖拽编排引擎**：支持 8 种运维动作节点（启停/健康检查/主从切换/故障转移等），覆盖 11 个逻辑服务、26 个演练预案
-> - 三级 3D 视景（L1 全局 → L2 多机柜包围盒 → L3 单刀片），执行时自动计算包围盒 + 镜头飞行，CSS2D 标签实时标注故障主机
-> - RBAC 权限模型 + AOP 操作审计 + JWT 认证，13 张数据表，15 个后端单元测试
+按简历四句话的优先级：
 
-### 7.3 和下一个 React + AntV X6 项目的衔接
+```
+第一遍（搞懂简历点 1+3 = WebSocket 双通道）：
+  → DashboardWebSocketHandler.java（10 分钟）
+  → TaskLogWebSocketHandler.java（10 分钟）
+  → TaskExecutionEngine.execute()（20 分钟）
 
-核心概念是相通的：
+第二遍（搞懂简历点 2 = 权限双层控制）：
+  → JwtAuthFilter.java（10 分钟）
+  → SysController.getMenus()（10 分钟）
+  → RoleController.savePermissions()（10 分钟）
 
-| Vue Flow (本项目) | AntV X6 (下个项目) |
-|-------------------|-------------------|
-| 节点 `type` + `data` | 节点 `shape` + `data` |
-| 边 `source` → `target` | 边 `source` → `target` |
-| `stepsJson` 序列化 | 同样的 JSON 序列化 |
-| `layout-meta` 过滤 | 画布元数据过滤 |
+第三遍（浏览简历点 4 = Docker）：
+  → docker-compose.yml（5 分钟）
+  → 随便看一个 Dockerfile（2 分钟）
+```
 
-你在这项目里理解的"画布编排 → JSON 存储 → 引擎解析执行"这个链路，下个项目可以直接复用思维模型。
+全部看完约 2 小时。你已经理解了前端全部逻辑，后端这些代码你带着"这个接口给前端哪个页面用的"的问题去看，会非常快。
