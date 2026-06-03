@@ -32,6 +32,7 @@
         type="primary"
         size="large"
         @click="resetPerspective"
+        :disabled="currentView === 'L3'"
         round
         shadow
       >
@@ -217,7 +218,7 @@ let miniWs: WebSocket | null = null;
 let lastExecCabinetIds: string[] = []; // 记死执行目标的所有机柜，跨页面恢复用
 const drillHostLabels: any[] = []; // 演练时挂载的 CSS2D 主机名标签
 let drillHostnames: string[] = []; // 当前演练涉及的主机名（用于切页恢复）
-
+//弹小终端
 const openMiniTerminal = (recordId: string, planName: string) => {
   miniTerminal.value = { visible: true, recordId, planName };
   miniLogs.value = [];
@@ -304,16 +305,19 @@ const goFullTerminal = () => {
 };
 
 // ============ 执行状态浮动标签 ============
+// 演练执行时的浮动状态标签（3D 场景右上角弹出："演练执行中"/"执行成功"/"执行失败"）
 const execLabel = ref({
-  visible: false,
-  icon: "",
-  text: "",
-  cssClass: "",
-  type: "" as string,
+  visible: false, // 是否显示
+  icon: "", // 图标 emoji（🟡⚪🟢🔴）
+  text: "", // 文本（"演练执行中"/"执行成功"等）
+  cssClass: "", // 样式类（label-drill/label-success/label-failed）
+  type: "" as string, // 预案类型（DRILL/FAILOVER/SCALE），跳转大终端时拼 URL 参数用
 });
+//定时器 3秒后自动隐藏执行状态标签 returntype 是 为了计算setTimeout 的返回值类型
 let execLabelTimer: ReturnType<typeof setTimeout> | null = null;
-
+// 2.被 parsePlanTargets 解析完后调用，传入预案类型 "DRILL"/"FAILOVER"/"SCALE"
 const showExecLabel = (planType: string) => {
+  //Record<K, V> = TypeScript 工具类型："键是 string，值是 {icon,text,cssClass}"
   const configs: Record<
     string,
     { icon: string; text: string; cssClass: string }
@@ -322,10 +326,11 @@ const showExecLabel = (planType: string) => {
     FAILOVER: { icon: "🔴", text: "故障切换中", cssClass: "label-failover" },
     SCALE: { icon: "🟢", text: "扩缩容中", cssClass: "label-scale" },
   };
+  //对象取值 configs[名]
   const cfg = configs[planType] || configs.DRILL;
   execLabel.value = { visible: true, ...cfg, type: planType };
 };
-
+//演练结束显示的标签
 const hideExecLabel = (outcome: string) => {
   if (outcome === "SUCCESS" && execLabel.value.type === "DRILL") {
     execLabel.value = {
@@ -346,29 +351,35 @@ const hideExecLabel = (outcome: string) => {
   } else {
     execLabel.value.visible = false;
   }
+  //每个定时器固定id 清除id
   if (execLabelTimer) clearTimeout(execLabelTimer);
+  //设置定时器 3s后执行一次任务 隐藏
   execLabelTimer = setTimeout(() => {
     execLabel.value.visible = false;
   }, 3000);
 };
 
-/** 从预案的 steps_json 中提取真实主机名列表（去重 + 过滤 NOTIFY/虚拟节点）并返回 planType */
+/** 1.从预案的 steps_json 中提取真实主机名列表（去重 + 过滤 NOTIFY/虚拟节点）并返回 planType */
+//入参 recordId (string)，返回 Promise<{主机名数组, 预案类型}>
 const parsePlanTargets = async (
   recordId: string,
 ): Promise<{ targets: string[]; planType: string }> => {
   try {
+    // ① 查执行记录 → 拿到 planId
     const recRes: any = await request.get(`/api/task/record/${recordId}`);
     if (recRes.code !== 200 || !recRes.data?.planId)
       return { targets: [], planType: "" };
     const planId = recRes.data.planId;
-
+    // ② 查预案 → 拿到 steps_json → 解析
     const planRes: any = await request.get(`/api/task/plan/${planId}`);
     if (planRes.code !== 200 || !planRes.data?.stepsJson)
       return { targets: [], planType: "" };
-    const raw = JSON.parse(planRes.data.stepsJson);
+    const raw = JSON.parse(planRes.data.stepsJson); //变回对象
+    //看是否是数组
     const steps = Array.isArray(raw) ? raw : raw.steps || [];
-
+    //不重复 只能装字符串
     const seen = new Set<string>();
+
     const notifyTargets = new Set([
       "SRE-Team",
       "DBA-Team",
@@ -379,6 +390,7 @@ const parsePlanTargets = async (
       "IDC-A",
       "IDC-B",
     ]);
+    //很傻的判断 这里和set里面的一摸一样 这里是先加再相反判断
     const targets = steps
       .filter(
         (s: any) =>
@@ -400,11 +412,13 @@ const parsePlanTargets = async (
   }
 };
 
-/** 飞到受影响机柜 — 多机柜自动算包围盒距离，隐藏无关机柜 */
+/** 飞到受影响机柜 —隐藏演练无关的机柜  */
 const flyToTargetCabinets = (cabIds: string[]) => {
   const targets: any[] = [];
+  //挨个遍历 不返回
   scene.children.forEach((child: any) => {
     if (child.name === "hostModel") {
+      //查询元素是否存在 返回布尔值
       const match = cabIds.includes(child.userData?.cabinetId);
       child.visible = match;
       if (match) targets.push(child);
@@ -446,26 +460,29 @@ const flyToTargetCabinets = (cabIds: string[]) => {
     y: camera.position.y,
     z: camera.position.z,
   };
-  new TWEEN.Tween(from)
-    .to({ x: cx, y: targets[0].position.y, z: cz + distance }, 1200)
-    .easing(TWEEN.Easing.Quadratic.InOut)
+  new TWEEN.Tween(from) //相机当前的位置
+    .to({ x: cx, y: targets[0].position.y, z: cz + distance }, 1200) //飞到哪
+    .easing(TWEEN.Easing.Quadratic.InOut) //先加速后减速
     .onUpdate(() => {
-      camera.position.set(from.x, from.y, from.z);
+      camera.position.set(from.x, from.y, from.z); //每祯更新相机位置
       controls.target.set(cx, targets[0].position.y, cz);
     })
-    .start();
+    .start(); //启动
 };
 
-/** 给涉事主机挂 CSS2D 名称标签 */
+/** 3.给涉事主机挂 CSS2D 名称标签 */
 const showDrillHostLabels = (hostnames: string[]) => {
   clearDrillHostLabels();
+  //8个机柜
   scene.children.forEach((child: any) => {
     if (child.name === "hostModel") {
       // 主机名藏在 servers 数组的 bladeServer 的 parentHost 里
       const servers = child.userData?.servers;
       if (!servers) return;
+      //全部刀片
       servers.children.forEach((blade: any) => {
         const host = blade.userData?.parentHost;
+        //判断主机名存在且在演练目标列表里，就挂标签
         if (host && hostnames.includes(host.hostname)) {
           const div = document.createElement("div");
           div.textContent = host.hostname || "";
@@ -486,31 +503,41 @@ const showDrillHostLabels = (hostnames: string[]) => {
     }
   });
 };
-
+//清除演练时候的主机标签
 const clearDrillHostLabels = () => {
+  //只做事 不返回值
   drillHostLabels.forEach((l) => scene.remove(l));
   drillHostLabels.length = 0;
 };
 
 // 检查是否从演练执行页跳转过来
 watch(
-  () => routeObj.query,
+  () => routeObj.query, //监听路由的query参数 recordId 和 planName 是演练执行页传过来的
   async (q) => {
+    //变了就会回调
     if (q.recordId && q.planName) {
       const rid = String(q.recordId);
       const pname = String(q.planName);
-      openMiniTerminal(rid, pname);
+      openMiniTerminal(rid, pname); //弹小终端
 
-      // 等 hostList 加载完（修复 immediate 时数据未就绪）
+      // 等 hostList 加载完 300ms
       let retries = 0;
       while (hostList.value.length === 0 && retries < 20) {
         await new Promise((r) => setTimeout(r, 300));
+        /**
+         * await new Promise((resolve) => {
+                  setTimeout(() => resolve(), 300)
+              })
+         * 
+         */
         retries++;
       }
-
+      //查询被影响的主机
       const { targets, planType } = await parsePlanTargets(rid);
+      //显示执行状态标签 传入预案类型
       showExecLabel(planType);
 
+      // 4.找出受影响的机柜
       const affectedCabs = new Set<string>();
       for (const hostname of targets) {
         const host = hostList.value.find((h: any) => h.hostname === hostname);
@@ -519,28 +546,31 @@ watch(
 
       if (affectedCabs.size > 0) {
         drillHostnames = targets;
+        //飞到影响的机柜
         flyToTargetCabinets([...affectedCabs]);
+        //挂相应的主机名标签
         showDrillHostLabels(targets);
       }
-
+      //执行时候自动开启热力图模式
       if (!isThermalMode.value) {
         toggleThermalMode();
       }
-
+      // 清掉路由参数，防止下次刷新时重复触发
       router.replace({ query: {} });
     }
   },
-  { immediate: true },
+  { immediate: true }, // watch 的第三个参数：组件一挂载就立即执行一次回调，不管 query 变没变
+  // 用于从 sessionStorage 恢复状态时也能触发
 );
 
 // Three.js 核心对象
-let scene: THREE.Scene;
-let camera: THREE.PerspectiveCamera;
-let renderer: THREE.WebGLRenderer;
-let labelRenderer: CSS2DRenderer;
-let controls: OrbitControls;
-let frameId: number;
-let activeCabinet: THREE.Group | null = null;
+let scene: THREE.Scene; // 3D 场景根节点
+let camera: THREE.PerspectiveCamera; // 透视相机（镜头）
+let renderer: THREE.WebGLRenderer; // WebGL 渲染器（画笔）
+let labelRenderer: CSS2DRenderer; // CSS2D 文字标签渲染器（机柜名牌/演练标签）
+let controls: OrbitControls; // 鼠标拖拽旋转控制器
+let frameId: number; // requestAnimationFrame 返回值，用于取消动画循环
+let activeCabinet: THREE.Group | null = null; // 当前聚焦的机柜 Group（L2 视角用）
 
 // 视角记忆：记录用户从 L1 飞往 L2 之前，停留在 L1 的相机位置和焦点
 const l1CameraState = {
@@ -850,9 +880,7 @@ const onPointerDown = (event: MouseEvent) => {
   pointerDownPos.x = event.clientX;
   pointerDownPos.y = event.clientY;
 };
-// ==========================================
-// 5. 交互核心：从l1>l2  l2>l3 的点击检测
-// ==========================================
+//3d点击交互 l1->l2 l2->l3 1-2层时候隐藏无关的机柜
 const onCanvasClick = (event: MouseEvent) => {
   if (!threeContainer.value) return;
   //判断松手位置和按下位置的距离 如果超过3像素 就认为是拖拽 否则是点击 防止误触
@@ -962,9 +990,7 @@ const onCanvasClick = (event: MouseEvent) => {
   }
 };
 
-// ==========================================
-// 6. 交互核心：视角逐级返回 (L3 -> L2 -> L1)
-// ==========================================
+//点击返回按钮的交互逻辑 l3->l2  l2->l1
 const goBack = () => {
   //l3返回l2
   if (currentView.value === "L3") {
@@ -1000,20 +1026,15 @@ const goBack = () => {
   }
 };
 
-// ==========================================
-// 7. 工具功能：重置当前层级的视角
-// ==========================================
+//重置视角按钮
 const resetPerspective = () => {
   if (currentView.value === "L1") {
     // 重置 L1 全局视角
     camera.position.set(15, 12, 20);
     controls.target.set(0, 0, 0);
     controls.update();
-  } else if (
-    (currentView.value === "L2" || currentView.value === "L3") &&
-    activeCabinet
-  ) {
-    // 重置 L2/L3 怼脸视角 (动态计算距离)
+  } else if (currentView.value === "L2" && activeCabinet) {
+    // 重置 L2 怼脸视角 (动态计算距离)
     const distance = getL2Distance(activeCabinet.userData.maxU || 8);
     camera.position.set(
       activeCabinet.position.x,
@@ -1075,17 +1096,21 @@ const toggleThermalMode = () => {
     }
   });
 };
-
+//挂载前 挂载后 当窗口尺寸变了就调用
 const handleResize = () => {
   //监听窗口变化 确保画布不拉伸
   if (!threeContainer.value) return;
+  //更新相机宽高比
   camera.aspect =
     threeContainer.value.clientWidth / threeContainer.value.clientHeight;
+  //内置立即重新算
   camera.updateProjectionMatrix();
+  //设置webgl画布尺寸
   renderer.setSize(
     threeContainer.value.clientWidth,
     threeContainer.value.clientHeight,
   );
+  //所有2d标签的尺寸
   labelRenderer.setSize(
     threeContainer.value.clientWidth,
     threeContainer.value.clientHeight,
@@ -1102,17 +1127,21 @@ const connectDashboardWs = () => {
   dashboardWs = new WebSocket(
     `${import.meta.env.VITE_WS_BASE}/ws/dashboard/events`,
   );
-
+  //浏览器websocket收到后端推送的对象 event.data(字符串)
   dashboardWs.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      //后端推送的演练类型 主机状态改变
       if (data.type === "HOST_STATUS") {
+        //根据之前的数组 由id 找 第一个主机
         const host = hostList.value.find((h: any) => h.id === data.hostId);
         if (host) {
           host.status = data.status;
         }
+        //3d场景中更新主机颜色
         updateHostColor(data.hostId, data.status);
       }
+      //后端推送的演练类型 演练撤销(将以前的变成可见的正常状态 并且清除演练标签)
       if (data.type === "HOST_STATUS" && data.action === "DRILL_REVERT") {
         clearDrillHostLabels();
         scene.children.forEach((child: any) => {
@@ -1124,7 +1153,7 @@ const connectDashboardWs = () => {
       /* 非 JSON 消息忽略 */
     }
   };
-
+  //断开消息时候重连用
   dashboardWs.onclose = () => {
     // 断线重连
     setTimeout(connectDashboardWs, 3000);
@@ -1152,7 +1181,7 @@ const updateHostColor = (hostId: number, status: number) => {
         status === 3 ? 0.9 : status === 2 ? 0.6 : 0;
       if (status === 2 || status === 3) {
         obj.userData.pulseColor = color;
-        obj.userData.pulseStart = performance.now();
+        obj.userData.pulseStart = performance.now(); //记录动画开始的时刻
       } else {
         obj.userData.pulseColor = null;
         obj.material.emissive.set("#000");
@@ -1160,7 +1189,8 @@ const updateHostColor = (hostId: number, status: number) => {
       }
 
       // 机柜线框也跟着变色（L1 全景下也能看到哪个机柜出问题）
-      let parent = obj.parent;
+      //网上找遍历 当前刀片
+      let parent = obj.parent; //servers层(上一层)
       while (parent) {
         if (parent.name === "hostModel") {
           parent.children.forEach((child: any) => {
@@ -1170,53 +1200,64 @@ const updateHostColor = (hostId: number, status: number) => {
           });
           break;
         }
+        //爸爸的爸爸变爷爷
         parent = parent.parent;
       }
     }
   });
 };
 
-// 9. 启动链：initThree 搭舞台 → fetchAndRenderAssets 拉数据+建模型 → connectDashboardWs 连实时推送
-//    然后检查 sessionStorage 恢复上次页面状态（跨页面持久化：L2视图/热力图/演练标签/悬浮终端）
+//组件挂载后执行一次
 onMounted(async () => {
+  //搭建舞台 scene、camera、renderer、lights、grid、animate
   initThree();
+  //异步拉取数据 并调用建立模型 renderHostModels()
   await fetchAndRenderAssets();
+  //连接3d事件 websocket 监听后端状态推送，更新主机状态和颜色
   connectDashboardWs();
+  //页面持久化 恢复之前的视角
   const saved = sessionStorage.getItem("dashboardState");
   if (saved) {
     try {
       const state = JSON.parse(saved);
+      //延迟800s
       setTimeout(() => {
+        //恢复热力图
         if (state.thermalOn && !isThermalMode.value) toggleThermalMode();
+        //恢复l2聚焦的位置
         if (state.cabinetIds?.length) {
           flyToTargetCabinets(state.cabinetIds);
         }
+        //恢复主机标签
         if (state.drillHostnames?.length) {
           drillHostnames = state.drillHostnames;
           showDrillHostLabels(drillHostnames);
         }
+
         if (state.active !== false && state.miniTerm?.recordId) {
-          openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName);
-          miniLogs.value = state.miniTerm.logs || [];
+          openMiniTerminal(state.miniTerm.recordId, state.miniTerm.planName); //恢复小终端
+          miniLogs.value = state.miniTerm.logs || []; //恢复终端日志
         }
       }, 800);
     } catch (_) {}
   }
   // 绑定 pointerdown 和 click，防止拖拽视角的误触
-  renderer.domElement.addEventListener("pointerdown", onPointerDown);
-  renderer.domElement.addEventListener("click", onCanvasClick);
-  window.addEventListener("resize", handleResize);
+  renderer.domElement.addEventListener("pointerdown", onPointerDown); //记录鼠标点击事件
+  renderer.domElement.addEventListener("click", onCanvasClick); //点开松手判断
+  window.addEventListener("resize", handleResize); //窗口缩放
 });
-
+//组件销毁时候 ：存状态、停循环、解事件
 onUnmounted(() => {
   clearDrillHostLabels();
   // 离开大屏前保存状态（总是保存，合并已有的 dashboardState 保留终端日志）
   const saved = sessionStorage.getItem("dashboardState");
   const prev = saved ? JSON.parse(saved) : {};
+  // 当前这场演练涉及的机柜ID（有就取当前，没有就沿用旧的）
   const cabinetIds =
     lastExecCabinetIds.length > 0
       ? [...lastExecCabinetIds]
       : prev.cabinetIds || [];
+  // 保存所有状态到 sessionStorage
   sessionStorage.setItem(
     "dashboardState",
     JSON.stringify({
@@ -1248,12 +1289,12 @@ onUnmounted(() => {
     }),
   );
 
-  cancelAnimationFrame(frameId);
-  if (dashboardWs) dashboardWs.close();
-  if (miniWs) miniWs.close();
-  renderer.domElement.removeEventListener("pointerdown", onPointerDown);
-  renderer.domElement.removeEventListener("click", onCanvasClick);
-  window.removeEventListener("resize", handleResize);
+  cancelAnimationFrame(frameId); //停止动画循环
+  if (dashboardWs) dashboardWs.close(); //断开websocket连接
+  if (miniWs) miniWs.close(); //断开小终端的连接
+  renderer.domElement.removeEventListener("pointerdown", onPointerDown); //解绑鼠标事件
+  renderer.domElement.removeEventListener("click", onCanvasClick); //解绑点击事件
+  window.removeEventListener("resize", handleResize); //解绑窗口缩放事件
   TWEEN.removeAll();
 });
 </script>
